@@ -55,6 +55,18 @@ async def get_sessions(
     )
 
 
+@router.get("/sessions/{session_id}", response_model=SessionSchema)
+async def get_session(
+    session_id: int,
+    db: Session = Depends(get_db)
+):
+    """Get a single session by ID"""
+    db_session = db.query(models.Session).filter(models.Session.id == session_id).first()
+    if not db_session:
+        raise HTTPException(status_code=404, detail="Session not found")
+    return db_session
+
+
 @router.put("/sessions/{session_id}", response_model=SessionSchema)
 async def update_session(
     session_id: int,

@@ -35,6 +35,7 @@ API documentation (Swagger UI) is available at `http://localhost:8000/docs`
 - `GET /api/projects` - Get list of projects
 - `POST /api/sessions` - Create a new session
 - `GET /api/sessions?page=1&page_size=20` - Get paginated list of sessions
+- `GET /api/sessions/{id}` - Get a single session by ID
 - `PUT /api/sessions/{id}` - Update a session
 
 ## Database
