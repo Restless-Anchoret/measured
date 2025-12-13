@@ -61,6 +61,11 @@ local_settings.py
 db.sqlite3
 db.sqlite3-journal
 
+# Database files
+*.db
+*.sqlite
+*.sqlite3
+
 # Flask stuff:
 instance/
 .webassets-cache
@@ -190,6 +195,14 @@ cython_debug/
 
 # Ruff stuff:
 .ruff_cache/
+
+# Editor swap files
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db
 
 # PyPI configuration file
 .pypirc
