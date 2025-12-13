@@ -6,18 +6,18 @@ FastAPI backend for the Measured time tracking application.
 
 1. Create a virtual environment:
 ```bash
-python -m venv venv
+python3 -m venv venv
 source venv/bin/activate  # On Windows: venv\Scripts\activate
 ```
 
 2. Install dependencies:
 ```bash
-pip install -r requirements.txt
+python3 -m pip install -r requirements.txt
 ```
 
 3. Initialize the database with hardcoded projects:
 ```bash
-python -m app.init_db
+python3 -m app.init_db
 ```
 
 4. Run the development server:
