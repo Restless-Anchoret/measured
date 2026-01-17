@@ -1,9 +1,9 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy.orm import Session
-from sqlalchemy import func
+import databases
 from app.database import get_db
-from app import models
+from app.models import Session
 from app.schemas import Session as SessionSchema, SessionCreate, SessionUpdate, PaginatedSessions
+from typing import Annotated
 
 router = APIRouter()
 
@@ -11,41 +11,60 @@ router = APIRouter()
 @router.post("/sessions", response_model=SessionSchema, status_code=201)
 async def create_session(
     session: SessionCreate,
-    db: Session = Depends(get_db)
+    db: Annotated[databases.Database, Depends(get_db)]
 ):
     """Create a new session"""
     # Verify project exists
-    project = db.query(models.Project).filter(models.Project.id == session.project_id).first()
-    if not project:
+    project_row = await db.fetch_one(
+        "SELECT id FROM projects WHERE id = :project_id",
+        {"project_id": session.project_id}
+    )
+    if not project_row:
         raise HTTPException(status_code=404, detail="Project not found")
     
     # Create session
-    db_session = models.Session(
-        project_id=session.project_id,
-        start_time=session.start_time,
-        end_time=session.end_time
+    await db.execute(
+        """
+        INSERT INTO sessions (project_id, start_time, end_time)
+        VALUES (:project_id, :start_time, :end_time)
+        """,
+        {
+            "project_id": session.project_id,
+            "start_time": session.start_time.isoformat(),
+            "end_time": session.end_time.isoformat() if session.end_time else None
+        }
     )
-    db.add(db_session)
-    db.commit()
-    db.refresh(db_session)
-    return db_session
+    
+    # Get the created session
+    row = await db.fetch_one(
+        "SELECT * FROM sessions WHERE id = last_insert_rowid()"
+    )
+    return Session.from_row(row)
 
 
 @router.get("/sessions", response_model=PaginatedSessions)
 async def get_sessions(
+    db: Annotated[databases.Database, Depends(get_db)],
     page: int = Query(1, ge=1),
-    page_size: int = Query(20, ge=1, le=100),
-    db: Session = Depends(get_db)
+    page_size: int = Query(20, ge=1, le=100)
 ):
     """Get paginated list of sessions"""
-    # Calculate offset
     offset = (page - 1) * page_size
     
     # Get total count
-    total = db.query(func.count(models.Session.id)).scalar()
+    total_row = await db.fetch_one("SELECT COUNT(*) as total FROM sessions")
+    total = total_row["total"]
     
     # Get sessions with pagination
-    sessions = db.query(models.Session).order_by(models.Session.created_at.desc()).offset(offset).limit(page_size).all()
+    rows = await db.fetch_all(
+        """
+        SELECT * FROM sessions
+        ORDER BY created_at DESC
+        LIMIT :page_size OFFSET :offset
+        """,
+        {"page_size": page_size, "offset": offset}
+    )
+    sessions = [Session.from_row(row) for row in rows]
     
     return PaginatedSessions(
         items=sessions,
@@ -58,29 +77,50 @@ async def get_sessions(
 @router.get("/sessions/{session_id}", response_model=SessionSchema)
 async def get_session(
     session_id: int,
-    db: Session = Depends(get_db)
+    db: Annotated[databases.Database, Depends(get_db)]
 ):
     """Get a single session by ID"""
-    db_session = db.query(models.Session).filter(models.Session.id == session_id).first()
-    if not db_session:
+    row = await db.fetch_one(
+        "SELECT * FROM sessions WHERE id = :session_id",
+        {"session_id": session_id}
+    )
+    if not row:
         raise HTTPException(status_code=404, detail="Session not found")
-    return db_session
+    return Session.from_row(row)
 
 
 @router.put("/sessions/{session_id}", response_model=SessionSchema)
 async def update_session(
     session_id: int,
     session_update: SessionUpdate,
-    db: Session = Depends(get_db)
+    db: Annotated[databases.Database, Depends(get_db)]
 ):
     """Update a session's start_time and end_time"""
-    db_session = db.query(models.Session).filter(models.Session.id == session_id).first()
-    if not db_session:
+    # Check if session exists
+    row = await db.fetch_one(
+        "SELECT id FROM sessions WHERE id = :session_id",
+        {"session_id": session_id}
+    )
+    if not row:
         raise HTTPException(status_code=404, detail="Session not found")
     
-    db_session.start_time = session_update.start_time
-    db_session.end_time = session_update.end_time
-    db.commit()
-    db.refresh(db_session)
-    return db_session
-
+    # Update session
+    await db.execute(
+        """
+        UPDATE sessions
+        SET start_time = :start_time, end_time = :end_time
+        WHERE id = :session_id
+        """,
+        {
+            "start_time": session_update.start_time.isoformat(),
+            "end_time": session_update.end_time.isoformat(),
+            "session_id": session_id
+        }
+    )
+    
+    # Get the updated session
+    row = await db.fetch_one(
+        "SELECT * FROM sessions WHERE id = :session_id",
+        {"session_id": session_id}
+    )
+    return Session.from_row(row)

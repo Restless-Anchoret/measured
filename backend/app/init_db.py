@@ -2,11 +2,8 @@
 Script to initialize the database with hardcoded projects.
 Run this once to populate the projects table.
 """
-from app.database import SessionLocal, engine, Base
-from app import models
-
-# Create tables
-Base.metadata.create_all(bind=engine)
+import asyncio
+from app.database import database, init_db
 
 # Hardcoded projects
 PROJECTS = [
@@ -17,28 +14,36 @@ PROJECTS = [
     "Hobbies"
 ]
 
-def init_projects():
-    db = SessionLocal()
+
+async def init_projects():
+    """Initialize projects in the database"""
+    # Check if projects already exist
+    total_row = await database.fetch_one("SELECT COUNT(*) as count FROM projects")
+    existing_count = total_row["count"]
+    
+    if existing_count > 0:
+        print("Projects already initialized. Skipping...")
+        return
+    
+    # Create projects
+    for project_name in PROJECTS:
+        await database.execute(
+            "INSERT INTO projects (name) VALUES (:name)",
+            {"name": project_name}
+        )
+    
+    print(f"Initialized {len(PROJECTS)} projects: {', '.join(PROJECTS)}")
+
+
+async def main():
+    """Initialize database tables and projects"""
+    await database.connect()
     try:
-        # Check if projects already exist
-        existing_count = db.query(models.Project).count()
-        if existing_count > 0:
-            print("Projects already initialized. Skipping...")
-            return
-        
-        # Create projects
-        for project_name in PROJECTS:
-            project = models.Project(name=project_name)
-            db.add(project)
-        
-        db.commit()
-        print(f"Initialized {len(PROJECTS)} projects: {', '.join(PROJECTS)}")
-    except Exception as e:
-        db.rollback()
-        print(f"Error initializing projects: {e}")
+        await init_db()
+        await init_projects()
     finally:
-        db.close()
+        await database.disconnect()
+
 
 if __name__ == "__main__":
-    init_projects()
-
+    asyncio.run(main())
