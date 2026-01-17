@@ -22,11 +22,13 @@ async def create_session(
     if not project_row:
         raise HTTPException(status_code=404, detail="Project not found")
     
-    # Create session
-    await db.execute(
+    # Create session using RETURNING clause (SQLite 3.35+)
+    # Insert the session with explicit created_at to ensure it's returned in RETURNING
+    row = await db.fetch_one(
         """
-        INSERT INTO sessions (project_id, start_time, end_time)
-        VALUES (:project_id, :start_time, :end_time)
+        INSERT INTO sessions (project_id, start_time, end_time, created_at)
+        VALUES (:project_id, :start_time, :end_time, CURRENT_TIMESTAMP)
+        RETURNING *
         """,
         {
             "project_id": session.project_id,
@@ -35,10 +37,8 @@ async def create_session(
         }
     )
     
-    # Get the created session
-    row = await db.fetch_one(
-        "SELECT * FROM sessions WHERE id = last_insert_rowid()"
-    )
+    if not row:
+        raise HTTPException(status_code=500, detail="Failed to create session")
     return Session.from_row(row)
 
 
