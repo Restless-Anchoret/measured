@@ -29,6 +29,34 @@ The API will be available at `http://localhost:8000`
 
 API documentation (Swagger UI) is available at `http://localhost:8000/docs`
 
+## Testing
+
+To run the integration tests, make sure you have activated the virtual environment and installed all dependencies (including test dependencies from `requirements.txt`).
+
+Run all tests:
+```bash
+pytest
+```
+
+Run tests with verbose output:
+```bash
+pytest -v
+```
+
+Run a specific test file:
+```bash
+pytest tests/test_health.py
+pytest tests/test_projects.py
+pytest tests/test_sessions.py
+```
+
+Run a specific test:
+```bash
+pytest tests/test_sessions.py::test_create_session
+```
+
+The test suite uses a separate test database (automatically created and cleaned up) and includes integration tests for all API endpoints.
+
 ## API Endpoints
 
 - `GET /api/health` - Health check

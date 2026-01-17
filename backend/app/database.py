@@ -14,10 +14,16 @@ async def get_db() -> AsyncGenerator[databases.Database, None]:
     yield database
 
 
-async def init_db():
-    """Initialize database tables"""
+async def init_db(db: databases.Database | None = None):
+    """Initialize database tables.
+    
+    Args:
+        db: Optional database instance. If not provided, uses the global database instance.
+    """
+    target_db = db if db is not None else database
+    
     # Create projects table
-    await database.execute("""
+    await target_db.execute("""
         CREATE TABLE IF NOT EXISTS projects (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             name TEXT NOT NULL UNIQUE
@@ -28,7 +34,7 @@ async def init_db():
     # Using TIMESTAMP for cross-database compatibility
     # SQLite stores as TEXT but accepts TIMESTAMP type
     # PostgreSQL and MySQL use native TIMESTAMP/DATETIME types
-    await database.execute("""
+    await target_db.execute("""
         CREATE TABLE IF NOT EXISTS sessions (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             project_id INTEGER NOT NULL,
