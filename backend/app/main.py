@@ -1,20 +1,21 @@
+from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.database import init_db, database
 from app.routers import projects, sessions, health
 
-app = FastAPI(title="Measured API", version="1.0.0")
 
-# Initialize database connection and tables on startup
-@app.on_event("startup")
-async def startup_event():
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Startup: Initialize database connection and tables
     await database.connect()
     await init_db()
-
-# Disconnect database on shutdown
-@app.on_event("shutdown")
-async def shutdown_event():
+    yield
+    # Shutdown: Disconnect database
     await database.disconnect()
+
+
+app = FastAPI(title="Measured API", version="1.0.0", lifespan=lifespan)
 
 # Configure CORS for frontend
 app.add_middleware(

@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 from datetime import datetime
 from typing import Optional
 
@@ -9,8 +9,7 @@ class ProjectBase(BaseModel):
 
 
 class Project(ProjectBase):
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class SessionBase(BaseModel):
@@ -32,8 +31,7 @@ class Session(SessionBase):
     id: int
     created_at: datetime
     
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class PaginatedSessions(BaseModel):

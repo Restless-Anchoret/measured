@@ -4,7 +4,7 @@ uvicorn[standard]==0.24.0
 # For SQLite: databases[aiosqlite]
 # For PostgreSQL: databases[postgresql] (or databases[asyncpg])
 # For MySQL: databases[aiomysql]
-databases[aiosqlite]==0.8.0
+databases[aiosqlite]==0.9.0
 pydantic==2.5.0
 python-dateutil==2.8.2
 pytest==7.4.3
