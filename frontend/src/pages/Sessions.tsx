@@ -3,15 +3,12 @@ import {
   Table,
   TableBody,
   TableCell,
-  TableContainer,
   TableHead,
+  TableHeader,
   TableRow,
-  Paper,
-  Typography,
-  CircularProgress,
-  Box,
-  Pagination,
-} from '@mui/material';
+} from '@/components/ui/table';
+import { Spinner } from '@/components/ui/spinner';
+import { Pagination } from '@/components/ui/pagination';
 import { API_URL } from '../config';
 import type { Session, Project, PaginatedSessions } from '../types';
 
@@ -27,34 +24,48 @@ export default function Sessions() {
 
   // Fetch projects once
   useEffect(() => {
-    setLoadingProjects(true);
-    fetch(`${API_URL}/projects`)
+    const controller = new AbortController();
+    
+    fetch(`${API_URL}/projects`, { signal: controller.signal })
       .then((response) => response.json())
       .then((data) => {
         setProjects(data);
         setLoadingProjects(false);
       })
       .catch((error) => {
+        if (error.name === 'AbortError') return; // Ignore abort errors
         console.error('Error fetching projects:', error);
         setLoadingProjects(false);
       });
+    
+    return () => controller.abort();
   }, []);
 
   // Fetch sessions when page changes
   useEffect(() => {
-    setLoadingSessions(true);
-    fetch(`${API_URL}/sessions?page=${page}&page_size=${PAGE_SIZE}`)
-      .then((response) => response.json())
-      .then((data: PaginatedSessions) => {
+    const controller = new AbortController();
+    
+    const fetchSessions = async () => {
+      setLoadingSessions(true);
+      try {
+        const response = await fetch(
+          `${API_URL}/sessions?page=${page}&page_size=${PAGE_SIZE}`,
+          { signal: controller.signal }
+        );
+        const data: PaginatedSessions = await response.json();
         setSessions(data.items);
         setTotal(data.total);
         setLoadingSessions(false);
-      })
-      .catch((error) => {
+      } catch (error) {
+        if ((error as Error).name === 'AbortError') return; // Ignore abort errors
         console.error('Error fetching sessions:', error);
         setSessions([]);
         setLoadingSessions(false);
-      });
+      }
+    };
+    
+    fetchSessions();
+    return () => controller.abort();
   }, [page]);
 
   const getProjectName = (projectId: number): string => {
@@ -83,26 +94,24 @@ export default function Sessions() {
 
   if (isLoading && sessions.length === 0) {
     return (
-      <Box display="flex" justifyContent="center" alignItems="center" minHeight="200px">
-        <CircularProgress />
-      </Box>
+      <div className="flex justify-center items-center min-h-[200px]">
+        <Spinner />
+      </div>
     );
   }
 
   return (
     <div>
-      <Typography variant="h4" component="h1" gutterBottom>
-        Sessions
-      </Typography>
-      <TableContainer component={Paper}>
+      <h1 className="text-4xl font-bold mb-6">Sessions</h1>
+      <div className="rounded-md border">
         <Table>
-          <TableHead>
+          <TableHeader>
             <TableRow>
-              <TableCell>Project Name</TableCell>
-              <TableCell>Duration</TableCell>
-              <TableCell>Start Date</TableCell>
+              <TableHead>Project Name</TableHead>
+              <TableHead>Duration</TableHead>
+              <TableHead>Start Date</TableHead>
             </TableRow>
-          </TableHead>
+          </TableHeader>
           <TableBody>
             {sessions.map((session) => (
               <TableRow key={session.id}>
@@ -113,17 +122,14 @@ export default function Sessions() {
             ))}
           </TableBody>
         </Table>
-      </TableContainer>
-      {totalPages > 1 && (
-        <Box display="flex" justifyContent="center" mt={3}>
-          <Pagination
-            count={totalPages}
-            page={page}
-            onChange={(_, newPage) => setPage(newPage)}
-            color="primary"
-          />
-        </Box>
-      )}
+      </div>
+      <div className="mt-6">
+        <Pagination
+          currentPage={page}
+          totalPages={totalPages}
+          onPageChange={setPage}
+        />
+      </div>
     </div>
   );
 }

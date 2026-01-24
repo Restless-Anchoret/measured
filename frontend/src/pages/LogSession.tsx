@@ -1,33 +1,49 @@
 import { useState, useEffect } from 'react';
+import { useForm } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
+import * as z from 'zod';
+import { toast } from 'sonner';
+import { Button } from '@/components/ui/button';
 import {
-  Box,
-  Button,
+  Form,
   FormControl,
-  InputLabel,
-  MenuItem,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormMessage,
+} from '@/components/ui/form';
+import { Input } from '@/components/ui/input';
+import {
   Select,
-  TextField,
-  Typography,
-  Snackbar,
-  Alert,
-} from '@mui/material';
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { API_URL } from '../config';
 import type { Project } from '../types';
 
+const formSchema = z.object({
+  projectId: z.number({
+    message: 'Please select a project',
+  }),
+  duration: z.number({
+    message: 'Please enter a duration',
+  }).min(1, 'Duration must be at least 1 minute'),
+});
+
+type FormValues = z.infer<typeof formSchema>;
+
 export default function LogSession() {
   const [projects, setProjects] = useState<Project[]>([]);
-  const [selectedProjectId, setSelectedProjectId] = useState<number | null>(null);
-  const [duration, setDuration] = useState<number | null>(null);
   const [projectsLoading, setProjectsLoading] = useState(true);
-  const [submitting, setSubmitting] = useState(false);
-  const [snackbar, setSnackbar] = useState<{
-    open: boolean;
-    message: string;
-    severity: 'success' | 'error';
-  }>({
-    open: false,
-    message: '',
-    severity: 'success',
+
+  const form = useForm<FormValues>({
+    resolver: zodResolver(formSchema),
+    defaultValues: {
+      projectId: undefined,
+      duration: undefined,
+    },
   });
 
   useEffect(() => {
@@ -40,39 +56,13 @@ export default function LogSession() {
       .catch((error) => {
         console.error('Error fetching projects:', error);
         setProjectsLoading(false);
-        setSnackbar({
-          open: true,
-          message: 'Failed to load projects',
-          severity: 'error',
-        });
+        toast.error('Failed to load projects');
       });
   }, []);
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-
-    if (!selectedProjectId || duration === null) {
-      setSnackbar({
-        open: true,
-        message: 'Please fill in all fields',
-        severity: 'error',
-      });
-      return;
-    }
-
-    if (duration <= 0) {
-      setSnackbar({
-        open: true,
-        message: 'Duration must be a positive number',
-        severity: 'error',
-      });
-      return;
-    }
-
-    setSubmitting(true);
-
+  const onSubmit = async (values: FormValues) => {
     const now = new Date();
-    const startTime = new Date(now.getTime() - duration * 60 * 1000);
+    const startTime = new Date(now.getTime() - values.duration * 60 * 1000);
 
     try {
       const response = await fetch(`${API_URL}/sessions`, {
@@ -81,7 +71,7 @@ export default function LogSession() {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          project_id: selectedProjectId,
+          project_id: values.projectId,
           start_time: startTime.toISOString(),
           end_time: now.toISOString(),
         }),
@@ -91,89 +81,80 @@ export default function LogSession() {
         throw new Error('Failed to log session');
       }
 
-      setSnackbar({
-        open: true,
-        message: 'New session logged',
-        severity: 'success',
-      });
+      toast.success('New session logged');
 
-      // Clear duration field on success
-      setDuration(null);
-    } catch (error) {
-      setSnackbar({
-        open: true,
-        message: 'Failed to log session',
-        severity: 'error',
-      });
-    } finally {
-      setSubmitting(false);
+      // Clear form on success
+      form.reset();
+    } catch {
+      toast.error('Failed to log session');
     }
-  };
-
-  const handleCloseSnackbar = () => {
-    setSnackbar({ ...snackbar, open: false });
   };
 
   return (
     <div>
-      <Typography variant="h4" component="h1" gutterBottom>
-        Log Session
-      </Typography>
-      <Box component="form" onSubmit={handleSubmit} sx={{ maxWidth: 400, mt: 3 }}>
-        <FormControl fullWidth margin="normal" required>
-          <InputLabel id="project-select-label">Project</InputLabel>
-          <Select
-            labelId="project-select-label"
-            id="project-select"
-            value={selectedProjectId ?? ''}
-            label="Project"
-            onChange={(e) => setSelectedProjectId(e.target.value as number | null)}
-            disabled={projectsLoading}
-          >
-            {projects.map((project) => (
-              <MenuItem key={project.id} value={project.id}>
-                {project.name}
-              </MenuItem>
-            ))}
-          </Select>
-        </FormControl>
-        <TextField
-          fullWidth
-          margin="normal"
-          label="Duration (minutes)"
-          type="number"
-          value={duration ?? ''}
-          onChange={(e) => {
-            const value = e.target.value;
-            setDuration(value === '' ? null : Number(value));
-          }}
-          required
-          inputProps={{ min: 1 }}
+      <h1 className="text-4xl font-bold mb-6">Log Session</h1>
+      <Form form={form} onSubmit={onSubmit} className="max-w-md space-y-6">
+        <FormField
+          control={form.control}
+          name="projectId"
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel>Project</FormLabel>
+              <Select
+                onValueChange={(value) => field.onChange(Number(value))}
+                value={field.value?.toString()}
+                disabled={projectsLoading}
+              >
+                <FormControl>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select a project" />
+                  </SelectTrigger>
+                </FormControl>
+                <SelectContent>
+                  {projects.map((project) => (
+                    <SelectItem key={project.id} value={String(project.id)}>
+                      {project.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <FormMessage />
+            </FormItem>
+          )}
         />
+
+        <FormField
+          control={form.control}
+          name="duration"
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel>Duration (minutes)</FormLabel>
+              <FormControl>
+                <Input
+                  type="number"
+                  placeholder="Enter duration in minutes"
+                  {...field}
+                  value={field.value ?? ''}
+                  onChange={(e) => {
+                    const value = e.target.value;
+                    field.onChange(value === '' ? undefined : Number(value));
+                  }}
+                  min={1}
+                />
+              </FormControl>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
+
         <Button
           type="submit"
-          variant="contained"
-          fullWidth
-          sx={{ mt: 3 }}
-          disabled={submitting || projectsLoading}
+          className="w-full"
+          disabled={form.formState.isSubmitting || projectsLoading}
         >
-          {submitting ? 'Logging...' : 'Log Session'}
+          {form.formState.isSubmitting ? 'Logging...' : 'Log Session'}
         </Button>
-      </Box>
-      <Snackbar
-        open={snackbar.open}
-        autoHideDuration={3000}
-        onClose={handleCloseSnackbar}
-        anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
-      >
-        <Alert
-          onClose={handleCloseSnackbar}
-          severity={snackbar.severity}
-          sx={{ width: '100%' }}
-        >
-          {snackbar.message}
-        </Alert>
-      </Snackbar>
+      </Form>
     </div>
   );
 }

@@ -3,14 +3,11 @@ import {
   Table,
   TableBody,
   TableCell,
-  TableContainer,
   TableHead,
+  TableHeader,
   TableRow,
-  Paper,
-  Typography,
-  CircularProgress,
-  Box,
-} from '@mui/material';
+} from '@/components/ui/table';
+import { Spinner } from '@/components/ui/spinner';
 import { API_URL } from '../config';
 import type { Project } from '../types';
 
@@ -33,24 +30,22 @@ export default function Projects() {
 
   if (loading) {
     return (
-      <Box display="flex" justifyContent="center" alignItems="center" minHeight="200px">
-        <CircularProgress />
-      </Box>
+      <div className="flex justify-center items-center min-h-[200px]">
+        <Spinner />
+      </div>
     );
   }
 
   return (
     <div>
-      <Typography variant="h4" component="h1" gutterBottom>
-        Projects
-      </Typography>
-      <TableContainer component={Paper}>
+      <h1 className="text-4xl font-bold mb-6">Projects</h1>
+      <div className="rounded-md border">
         <Table>
-          <TableHead>
+          <TableHeader>
             <TableRow>
-              <TableCell>Name</TableCell>
+              <TableHead>Name</TableHead>
             </TableRow>
-          </TableHead>
+          </TableHeader>
           <TableBody>
             {projects.map((project) => (
               <TableRow key={project.id}>
@@ -59,7 +54,7 @@ export default function Projects() {
             ))}
           </TableBody>
         </Table>
-      </TableContainer>
+      </div>
     </div>
   );
 }
