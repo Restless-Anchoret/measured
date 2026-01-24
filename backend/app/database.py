@@ -3,6 +3,8 @@ import os
 from typing import AsyncGenerator
 
 # Database URL - supports SQLite, PostgreSQL, MySQL, etc.
+# Default: local development uses ./measured.db
+# Production (Fly.io): uses /data/measured.db (set via environment variable)
 DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./measured.db")
 
 # Create database instance

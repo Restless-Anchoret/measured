@@ -1,0 +1,38 @@
+# fly.toml app configuration file generated for measured-backend on 2026-01-24T15:59:46+01:00
+#
+# See https://fly.io/docs/reference/configuration/ for information about how to use this file.
+#
+
+app = 'measured-backend'
+primary_region = 'ams'
+
+[build]
+  dockerfile = 'Dockerfile'
+
+[env]
+  DATABASE_URL = 'sqlite:////data/measured.db'
+
+[[mounts]]
+  source = 'measured_data'
+  destination = '/data'
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  auto_stop_machines = 'stop'
+  auto_start_machines = true
+  min_machines_running = 0
+  processes = ['app']
+
+  [[http_service.checks]]
+    interval = '15s'
+    timeout = '5s'
+    grace_period = '10s'
+    method = 'GET'
+    path = '/api/health'
+    protocol = 'http'
+
+[[vm]]
+  memory = '256mb'
+  cpus = 1
+  memory_mb = 256
