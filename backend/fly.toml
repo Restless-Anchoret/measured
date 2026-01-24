@@ -9,6 +9,9 @@ primary_region = 'ams'
 [build]
   dockerfile = 'Dockerfile'
 
+[deploy]
+  release_command = 'python -m app.init_db'
+
 [env]
   DATABASE_URL = 'sqlite:////data/measured.db'
 
