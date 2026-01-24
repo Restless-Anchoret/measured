@@ -20,7 +20,10 @@ app = FastAPI(title="Measured API", version="1.0.0", lifespan=lifespan)
 # Configure CORS for frontend
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # In production, specify your frontend domain
+    allow_origins=[
+        "http://localhost:5173",  # Local development
+        "https://measured-tracker.vercel.app",  # Production frontend
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
