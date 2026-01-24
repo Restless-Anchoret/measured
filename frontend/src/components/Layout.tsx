@@ -9,28 +9,27 @@ interface LayoutProps {
   children: ReactNode;
 }
 
+const checkIsMobile = () => window.innerWidth < 768;
+
 export default function Layout({ children }: LayoutProps) {
   const navigate = useNavigate();
   const location = useLocation();
   // Single state: mobile (true=visible, false=hidden), desktop (true=expanded, false=collapsed)
-  const [sidebarOpen, setSidebarOpen] = useState(true);
-  const [isMobile, setIsMobile] = useState(false);
+  // Initialize mobile detection synchronously to avoid flash on mobile
+  const [isMobile, setIsMobile] = useState(checkIsMobile());
+  const [sidebarOpen, setSidebarOpen] = useState(!checkIsMobile());
 
-  // Detect mobile/desktop and set initial sidebar state
+  // Handle window resize to update mobile/desktop state
   useEffect(() => {
-    const checkMobile = () => {
-      const mobile = window.innerWidth < 768;
+    const handleResize = () => {
+      const mobile = checkIsMobile();
       setIsMobile(mobile);
-      if (mobile) {
-        setSidebarOpen(false); // Default hidden on mobile
-      } else {
-        setSidebarOpen(true); // Default expanded on desktop
-      }
+      // Update sidebar state when switching between mobile and desktop
+      setSidebarOpen(!mobile);
     };
 
-    checkMobile();
-    window.addEventListener('resize', checkMobile);
-    return () => window.removeEventListener('resize', checkMobile);
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
   }, []);
 
   const menuItems = [
