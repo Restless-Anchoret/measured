@@ -23,6 +23,7 @@ app.add_middleware(
     allow_origins=[
         "http://localhost:5173",  # Local development
         "https://measured-tracker.vercel.app",  # Production frontend
+        "https://measured-demo.vercel.app",  # Temporary production demo frontend
     ],
     allow_credentials=True,
     allow_methods=["*"],
