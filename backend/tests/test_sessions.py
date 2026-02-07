@@ -133,12 +133,12 @@ async def test_get_sessions_paginated(client: AsyncClient):
     assert len(data["items"]) == 1
     assert data["page"] == 3
     
-    # Verify sessions are ordered by created_at DESC (most recent first)
+    # Verify sessions are ordered by start_time DESC (most recent first)
     all_sessions_response = await client.get("/api/sessions?page=1&page_size=100")
     all_sessions = all_sessions_response.json()["items"]
-    created_at_times = [s["created_at"] for s in all_sessions]
+    start_times = [s["start_time"] for s in all_sessions]
     # Should be in descending order
-    assert created_at_times == sorted(created_at_times, reverse=True)
+    assert start_times == sorted(start_times, reverse=True)
 
 
 @pytest.mark.asyncio

@@ -59,7 +59,7 @@ async def get_sessions(
     rows = await db.fetch_all(
         """
         SELECT * FROM sessions
-        ORDER BY created_at DESC
+        ORDER BY start_time DESC
         LIMIT :page_size OFFSET :offset
         """,
         {"page_size": page_size, "offset": offset}
