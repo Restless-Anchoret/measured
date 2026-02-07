@@ -15,12 +15,7 @@ source venv/bin/activate  # On Windows: venv\Scripts\activate
 python3 -m pip install -r requirements.txt
 ```
 
-3. Initialize the database with hardcoded projects:
-```bash
-python3 -m app.init_db
-```
-
-4. Run the development server:
+3. Run the development server:
 ```bash
 uvicorn app.main:app --reload
 ```
