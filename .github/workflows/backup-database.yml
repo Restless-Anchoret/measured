@@ -1,0 +1,62 @@
+name: Backup Database
+
+on:
+  # Run daily at 2 AM UTC
+  schedule:
+    - cron: '0 2 * * *'
+  # Allow manual triggering
+  workflow_dispatch:
+
+jobs:
+  backup:
+    name: Backup Production Database
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Install Fly.io CLI
+        uses: superfly/flyctl-actions/setup-flyctl@master
+      
+      - name: Create backup on Fly.io
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+        run: |
+          # Generate timestamp for backup filename
+          TIMESTAMP=$(date +%Y-%m-%d)
+          echo "BACKUP_FILENAME=backup-${TIMESTAMP}.sql.gz" >> $GITHUB_ENV
+          echo "Creating backup for ${TIMESTAMP}..."
+          
+          # SSH into Fly.io machine and create compressed SQL dump
+          flyctl ssh console --app measured-backend --command "sqlite3 /data/measured.db .dump | gzip > /data/backup.sql.gz"
+      
+      - name: Download backup from Fly.io
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+        run: |
+          # Download the backup file using SFTP
+          flyctl ssh sftp get --app measured-backend /data/backup.sql.gz ./${{ env.BACKUP_FILENAME }}
+          
+          # Verify the backup file exists and has content
+          if [ ! -s "${{ env.BACKUP_FILENAME }}" ]; then
+            echo "Error: Backup file is empty or does not exist"
+            exit 1
+          fi
+          
+          echo "Backup downloaded successfully: ${{ env.BACKUP_FILENAME }}"
+          ls -lh ${{ env.BACKUP_FILENAME }}
+      
+      - name: Upload backup as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.BACKUP_FILENAME }}
+          path: ${{ env.BACKUP_FILENAME }}
+          retention-days: 30
+          compression-level: 0  # Already compressed with gzip
+      
+      - name: Cleanup remote backup file
+        if: always()
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+        run: |
+          # Remove the temporary backup file from Fly.io machine
+          flyctl ssh console --app measured-backend --command "rm -f /data/backup.sql.gz" || true
+

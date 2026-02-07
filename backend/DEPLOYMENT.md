@@ -148,36 +148,81 @@ fly secrets unset MY_SECRET
 
 ### Database Management
 
-#### Backup Database
+#### Automated Backups
 
-SSH into the machine and copy the database:
+The production database is automatically backed up **daily at 2 AM UTC** using GitHub Actions. Backups are:
+- Stored as GitHub Artifacts with **30-day retention**
+- Compressed with gzip (~90% size reduction)
+- Named with timestamps (e.g., `backup-2026-02-07.sql.gz`)
+
+**Setup Requirements:**
+
+Before automated backups will work, you must configure the Fly.io API token:
+
+1. Generate a Fly.io API token:
+   ```bash
+   fly auth token
+   ```
+
+2. Add it as a GitHub repository secret:
+   - Go to your GitHub repository → Settings → Secrets and variables → Actions
+   - Click "New repository secret"
+   - Name: `FLY_API_TOKEN`
+   - Value: Paste the token from step 1
+   - Click "Add secret"
+
+**Manual Backup Trigger:**
+
+You can trigger a backup manually at any time:
+1. Go to your GitHub repository → Actions tab
+2. Select "Backup Database" workflow
+3. Click "Run workflow" → "Run workflow"
+
+#### Restore Database from Backup
+
+To restore a database from a backup:
+
+1. **Download the backup:**
+   - Go to GitHub repository → Actions → "Backup Database"
+   - Select a successful workflow run
+   - Download the backup artifact (e.g., `backup-2026-02-07.sql.gz`)
+   - Extract it: `gunzip backup-2026-02-07.sql.gz`
+
+2. **Restore locally (for testing):**
+   ```bash
+   sqlite3 measured.db < backup-2026-02-07.sql
+   ```
+
+3. **Restore to production:**
+   ```bash
+   # Upload the backup to Fly.io
+   fly ssh sftp shell
+   put backup-2026-02-07.sql /data/backup.sql
+   exit
+   
+   # Restore the database
+   fly ssh console
+   cd /data
+   # Create a backup of current database first (optional but recommended)
+   cp measured.db measured.db.before-restore
+   # Restore from backup
+   sqlite3 measured.db < backup.sql
+   exit
+   ```
+
+#### Manual Backup (Alternative)
+
+If you need to create a backup outside of the automated schedule:
 
 ```bash
+# SSH into the machine and create SQL dump
 fly ssh console
 cd /data
 sqlite3 measured.db .dump > backup.sql
 exit
-```
 
-Then use `fly ssh sftp` to download the backup:
-
-```bash
+# Download the backup
 fly ssh sftp get /data/backup.sql ./backup.sql
-```
-
-#### Restore Database
-
-Upload and restore:
-
-```bash
-fly ssh sftp shell
-put ./backup.sql /data/backup.sql
-exit
-
-fly ssh console
-cd /data
-sqlite3 measured.db < backup.sql
-exit
 ```
 
 ## Monitoring
