@@ -27,6 +27,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Copy Python dependencies from builder
 COPY --from=builder /root/.local /root/.local
 
+# Copy SQL scripts
+COPY sql/ sql/
+
 # Copy application code
 COPY . .
 
