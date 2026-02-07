@@ -25,8 +25,8 @@ jobs:
           echo "BACKUP_FILENAME=backup-${TIMESTAMP}.sql.gz" >> $GITHUB_ENV
           echo "Creating backup for ${TIMESTAMP}..."
           
-          # SSH into Fly.io machine and create compressed SQL dump
-          flyctl ssh console --app measured-backend --command "sqlite3 /data/measured.db .dump | gzip > /data/backup.sql.gz"
+          # SSH into Fly.io machine and create SQL dump, then compress it
+          flyctl ssh console --app measured-backend --command "sh -c 'sqlite3 /data/measured.db .dump > /data/backup.sql && gzip -f /data/backup.sql'"
       
       - name: Download backup from Fly.io
         env:
@@ -57,6 +57,6 @@ jobs:
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
         run: |
-          # Remove the temporary backup file from Fly.io machine
-          flyctl ssh console --app measured-backend --command "rm -f /data/backup.sql.gz" || true
+          # Remove the temporary backup files from Fly.io machine
+          flyctl ssh console --app measured-backend --command "rm -f /data/backup.sql /data/backup.sql.gz" || true
 

@@ -215,14 +215,13 @@ To restore a database from a backup:
 If you need to create a backup outside of the automated schedule:
 
 ```bash
-# SSH into the machine and create SQL dump
-fly ssh console
-cd /data
-sqlite3 measured.db .dump > backup.sql
-exit
+# Create and download a compressed backup
+fly ssh console --app measured-backend --command "sh -c 'sqlite3 /data/measured.db .dump > /data/backup.sql && gzip -f /data/backup.sql'"
+fly ssh sftp get --app measured-backend /data/backup.sql.gz ./backup.sql.gz
 
-# Download the backup
-fly ssh sftp get /data/backup.sql ./backup.sql
+# Or for an uncompressed backup:
+fly ssh console --app measured-backend --command "sqlite3 /data/measured.db .dump > /data/backup.sql"
+fly ssh sftp get --app measured-backend /data/backup.sql ./backup.sql
 ```
 
 ## Monitoring
