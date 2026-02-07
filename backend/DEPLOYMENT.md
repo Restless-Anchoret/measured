@@ -190,6 +190,8 @@ To restore a database from a backup:
 
 2. **Restore locally (for testing):**
    ```bash
+   # Delete the old database and create fresh one from backup
+   rm -f measured.db
    sqlite3 measured.db < backup-2026-02-07.sql
    ```
 
@@ -200,15 +202,27 @@ To restore a database from a backup:
    put backup-2026-02-07.sql /data/backup.sql
    exit
    
-   # Restore the database
+   # Restore the database (replaces existing database)
    fly ssh console
    cd /data
-   # Create a backup of current database first (optional but recommended)
-   cp measured.db measured.db.before-restore
-   # Restore from backup
+   
+   # IMPORTANT: Backup current database first!
+   cp measured.db measured.db.before-restore-$(date +%Y%m%d-%H%M%S)
+   
+   # Delete old database and restore from backup
+   rm -f measured.db
    sqlite3 measured.db < backup.sql
+   
+   # Verify the restore was successful
+   sqlite3 measured.db "SELECT COUNT(*) FROM projects; SELECT COUNT(*) FROM sessions;"
+   
    exit
    ```
+   
+   **⚠️ Important Notes:**
+   - The SQL dump contains `CREATE TABLE` statements, so it must be applied to a **fresh/empty database**
+   - Always backup the current database before restoring (as shown above)
+   - If something goes wrong, you can restore from `measured.db.before-restore-*` files
 
 #### Manual Backup (Alternative)
 
