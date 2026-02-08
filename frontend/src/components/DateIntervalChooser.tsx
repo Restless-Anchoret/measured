@@ -152,7 +152,7 @@ export default function DateIntervalChooser({ onChange }: DateIntervalChooserPro
   }, []);
 
   return (
-    <div className="flex items-center gap-4">
+    <div className="flex flex-col md:flex-row items-start md:items-center gap-4">
       {/* Interval Navigator */}
       <div className="flex items-center gap-2 border rounded-md">
         <Button
