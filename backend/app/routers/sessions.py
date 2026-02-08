@@ -47,7 +47,7 @@ async def create_session(
 async def get_sessions(
     db: Annotated[databases.Database, Depends(get_db)],
     page: int = Query(1, ge=1),
-    page_size: int = Query(20, ge=1, le=100),
+    page_size: int = Query(20, ge=1, le=1000),
     min_start_time: Optional[datetime] = Query(None, description="Minimum start time (inclusive) as UTC timestamp"),
     max_start_time: Optional[datetime] = Query(None, description="Maximum start time (exclusive) as UTC timestamp")
 ):

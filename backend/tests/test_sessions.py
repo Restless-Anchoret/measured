@@ -166,7 +166,7 @@ async def test_get_sessions_paginated(client: AsyncClient):
     assert data["page"] == 3
     
     # Verify sessions are ordered by start_time DESC (most recent first)
-    all_sessions_response = await client.get("/api/sessions?page=1&page_size=100")
+    all_sessions_response = await client.get("/api/sessions?page=1&page_size=1000")
     all_sessions = all_sessions_response.json()["items"]
     start_times = [s["start_time"] for s in all_sessions]
     # Should be in descending order
@@ -184,8 +184,8 @@ async def test_get_sessions_pagination_validation(client: AsyncClient):
     response = await client.get("/api/sessions?page_size=0")
     assert response.status_code == 400
     
-    # Test page_size too large (greater than 100)
-    response = await client.get("/api/sessions?page_size=101")
+    # Test page_size too large (greater than 1000)
+    response = await client.get("/api/sessions?page_size=1001")
     assert response.status_code == 400
     
     # Test valid parameters
