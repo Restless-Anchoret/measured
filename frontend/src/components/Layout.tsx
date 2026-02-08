@@ -2,7 +2,7 @@ import type { ReactNode } from 'react';
 import { useState, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
-import { Menu, X, Clock, List, Folder } from 'lucide-react';
+import { Menu, X, Clock, List, Folder, BarChart3 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 interface LayoutProps {
@@ -36,6 +36,7 @@ export default function Layout({ children }: LayoutProps) {
     { text: 'Log\u00A0Session', path: '/log-session', icon: Clock },
     { text: 'Sessions', path: '/sessions', icon: List },
     { text: 'Projects', path: '/projects', icon: Folder },
+    { text: 'Charts', path: '/charts', icon: BarChart3 },
   ];
 
   const toggleSidebar = () => {

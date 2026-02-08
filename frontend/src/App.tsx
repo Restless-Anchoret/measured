@@ -3,6 +3,7 @@ import Layout from './components/Layout';
 import LogSession from './pages/LogSession';
 import Sessions from './pages/Sessions';
 import Projects from './pages/Projects';
+import Charts from './pages/Charts';
 
 function App() {
   return (
@@ -13,6 +14,7 @@ function App() {
           <Route path="/log-session" element={<LogSession />} />
           <Route path="/sessions" element={<Sessions />} />
           <Route path="/projects" element={<Projects />} />
+          <Route path="/charts" element={<Charts />} />
         </Routes>
       </Layout>
     </BrowserRouter>
