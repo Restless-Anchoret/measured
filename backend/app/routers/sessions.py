@@ -3,7 +3,8 @@ import databases
 from app.database import get_db
 from app.models import Session
 from app.schemas import Session as SessionSchema, SessionCreate, SessionUpdate, PaginatedSessions
-from typing import Annotated
+from typing import Annotated, Optional
+from datetime import datetime
 
 router = APIRouter()
 
@@ -46,24 +47,41 @@ async def create_session(
 async def get_sessions(
     db: Annotated[databases.Database, Depends(get_db)],
     page: int = Query(1, ge=1),
-    page_size: int = Query(20, ge=1, le=100)
+    page_size: int = Query(20, ge=1, le=100),
+    min_start_time: Optional[datetime] = Query(None, description="Minimum start time (inclusive) as UTC timestamp"),
+    max_start_time: Optional[datetime] = Query(None, description="Maximum start time (exclusive) as UTC timestamp")
 ):
     """Get paginated list of sessions"""
     offset = (page - 1) * page_size
     
+    # Build WHERE clause and params
+    where_clauses = []
+    filter_params = {}
+    
+    if min_start_time:
+        where_clauses.append("start_time >= :min_start_time")
+        filter_params["min_start_time"] = min_start_time.isoformat()
+    
+    if max_start_time:
+        where_clauses.append("start_time < :max_start_time")
+        filter_params["max_start_time"] = max_start_time.isoformat()
+    
+    where_sql = " WHERE " + " AND ".join(where_clauses) if where_clauses else ""
+    
     # Get total count
-    total_row = await db.fetch_one("SELECT COUNT(*) as total FROM sessions")
+    count_query = f"SELECT COUNT(*) as total FROM sessions{where_sql}"
+    total_row = await db.fetch_one(count_query, filter_params)
     total = total_row["total"]
     
     # Get sessions with pagination
-    rows = await db.fetch_all(
-        """
+    data_query = f"""
         SELECT * FROM sessions
+        {where_sql}
         ORDER BY start_time DESC
         LIMIT :page_size OFFSET :offset
-        """,
-        {"page_size": page_size, "offset": offset}
-    )
+    """
+    data_params = {**filter_params, "page_size": page_size, "offset": offset}
+    rows = await db.fetch_all(data_query, data_params)
     sessions = [Session.from_row(row) for row in rows]
     
     return PaginatedSessions(

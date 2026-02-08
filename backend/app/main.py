@@ -1,6 +1,8 @@
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import JSONResponse
 from app.database import init_db, database
 from app.routers import projects, sessions, health
 
@@ -16,6 +18,16 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="Measured API", version="1.0.0", lifespan=lifespan)
+
+
+# Exception handler to return 400 instead of 422 for validation errors
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request, exc: RequestValidationError):
+    return JSONResponse(
+        status_code=400,
+        content={"detail": exc.errors()}
+    )
+
 
 # Configure CORS for frontend
 app.add_middleware(
