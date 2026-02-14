@@ -1,5 +1,5 @@
 -- Add color columns to projects table
-ALTER TABLE projects ADD COLUMN color VARCHAR(7);
+ALTER TABLE projects ADD COLUMN color VARCHAR(7) NOT NULL DEFAULT '#000000';
 ALTER TABLE projects ADD COLUMN extra_color VARCHAR(7);
 
 -- Set color values for each project
@@ -19,9 +19,6 @@ UPDATE projects SET color = '#7797c9' WHERE name = 'Diary';
 UPDATE projects SET color = '#2055f5' WHERE name = 'Meatings';
 UPDATE projects SET color = '#f59120', extra_color = '#fae7d2' WHERE name = 'Slow walking';
 UPDATE projects SET color = '#db076a' WHERE name = 'Growth sessions';
-
--- Make color column non-nullable
-ALTER TABLE projects ALTER COLUMN color SET NOT NULL;
 
 -- Fix typo: Meatings -> Meetings
 UPDATE projects SET name = 'Meetings' WHERE name = 'Meatings';
