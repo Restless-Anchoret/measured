@@ -6,6 +6,8 @@ from typing import Optional
 class ProjectBase(BaseModel):
     id: int
     name: str
+    color: str
+    extraColor: Optional[str] = None
 
 
 class Project(ProjectBase):

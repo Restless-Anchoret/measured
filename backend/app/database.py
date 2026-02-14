@@ -28,7 +28,9 @@ async def init_db(db: databases.Database | None = None):
     await target_db.execute("""
         CREATE TABLE IF NOT EXISTS projects (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            name TEXT NOT NULL UNIQUE
+            name TEXT NOT NULL UNIQUE,
+            color VARCHAR(7) NOT NULL,
+            extra_color VARCHAR(7)
         )
     """)
     

@@ -11,11 +11,18 @@ from typing import Optional
 class Project:
     id: int
     name: str
+    color: str
+    extraColor: Optional[str] = None
     
     @classmethod
     def from_row(cls, row) -> "Project":
         """Create Project from database row"""
-        return cls(id=row["id"], name=row["name"])
+        return cls(
+            id=row["id"],
+            name=row["name"],
+            color=row["color"],
+            extraColor=row["extra_color"] if row["extra_color"] else None
+        )
 
 
 @dataclass

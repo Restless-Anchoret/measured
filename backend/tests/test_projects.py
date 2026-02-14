@@ -21,8 +21,13 @@ async def test_get_projects(client: AsyncClient):
     for project in projects:
         assert "id" in project
         assert "name" in project
+        assert "color" in project
+        assert "extraColor" in project
         assert isinstance(project["id"], int)
         assert isinstance(project["name"], str)
+        assert isinstance(project["color"], str)
+        # extraColor is optional, so it can be None or str
+        assert project["extraColor"] is None or isinstance(project["extraColor"], str)
     
     # Check that projects are sorted by id
     project_ids = [p["id"] for p in projects]

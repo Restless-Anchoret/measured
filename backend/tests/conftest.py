@@ -42,11 +42,17 @@ async def test_db() -> AsyncGenerator[databases.Database, None]:
 
 async def seed_test_projects(db: databases.Database):
     """Seed test database with initial projects."""
-    test_projects = ["Work", "Personal", "Learning", "Exercise", "Hobbies"]
-    for project_name in test_projects:
+    test_projects = [
+        {"name": "Work", "color": "#ff5733", "extra_color": "#c70039"},
+        {"name": "Personal", "color": "#33ff57", "extra_color": None},
+        {"name": "Learning", "color": "#3357ff", "extra_color": "#1d3a8f"},
+        {"name": "Exercise", "color": "#f3ff33", "extra_color": None},
+        {"name": "Hobbies", "color": "#ff33f3", "extra_color": "#8f1d8a"},
+    ]
+    for project in test_projects:
         await db.execute(
-            "INSERT OR IGNORE INTO projects (name) VALUES (:name)",
-            {"name": project_name}
+            "INSERT OR IGNORE INTO projects (name, color, extra_color) VALUES (:name, :color, :extra_color)",
+            {"name": project["name"], "color": project["color"], "extra_color": project["extra_color"]}
         )
 
 
