@@ -147,7 +147,6 @@ export default function Layout({ children }: LayoutProps) {
               <Menu className="h-5 w-5" />
             </Button>
           )}
-          <img src="/favicon.svg" alt="Measured logo" className="h-8 w-8" />
           <h1 className="text-xl font-semibold">Measured</h1>
         </header>
         <main className="flex-1 p-6 overflow-auto">
