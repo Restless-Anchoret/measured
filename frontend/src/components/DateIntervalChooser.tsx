@@ -3,13 +3,10 @@ import {
   startOfWeek,
   endOfWeek,
   startOfMonth,
-  endOfMonth,
   startOfYear,
-  endOfYear,
   addWeeks,
   addMonths,
   addYears,
-  addDays,
   format,
 } from 'date-fns';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
@@ -66,15 +63,15 @@ export default function DateIntervalChooser({ onChange }: DateIntervalChooserPro
     switch (config.intervalKind) {
       case IntervalKind.WEEK:
         fromDate = startOfWeek(date, weekOptions);
-        toDate = addDays(endOfWeek(date, weekOptions), 1);
+        toDate = addWeeks(fromDate, 1);
         break;
       case IntervalKind.MONTH:
         fromDate = startOfMonth(date);
-        toDate = addDays(endOfMonth(date), 1);
+        toDate = addMonths(fromDate, 1);
         break;
       case IntervalKind.YEAR:
         fromDate = startOfYear(date);
-        toDate = addDays(endOfYear(date), 1);
+        toDate = addYears(fromDate, 1);
         break;
     }
 
