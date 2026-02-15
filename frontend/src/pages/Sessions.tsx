@@ -10,36 +10,17 @@ import {
 import { Spinner } from '@/components/ui/spinner';
 import { Pagination } from '@/components/ui/pagination';
 import { API_URL } from '../config';
-import type { Session, Project, PaginatedSessions } from '../types';
+import type { Session, PaginatedSessions } from '../types';
+import { useProjects } from '../hooks/useProjects';
 
 const PAGE_SIZE = 10;
 
 export default function Sessions() {
   const [sessions, setSessions] = useState<Session[]>([]);
-  const [projects, setProjects] = useState<Project[]>([]);
-  const [loadingProjects, setLoadingProjects] = useState(true);
+  const { projects, loading: loadingProjects } = useProjects();
   const [loadingSessions, setLoadingSessions] = useState(true);
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
-
-  // Fetch projects once
-  useEffect(() => {
-    const controller = new AbortController();
-    
-    fetch(`${API_URL}/projects`, { signal: controller.signal })
-      .then((response) => response.json())
-      .then((data) => {
-        setProjects(data);
-        setLoadingProjects(false);
-      })
-      .catch((error) => {
-        if (error.name === 'AbortError') return; // Ignore abort errors
-        console.error('Error fetching projects:', error);
-        setLoadingProjects(false);
-      });
-    
-    return () => controller.abort();
-  }, []);
 
   // Fetch sessions when page changes
   useEffect(() => {

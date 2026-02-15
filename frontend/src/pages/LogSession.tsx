@@ -1,4 +1,3 @@
-import { useState, useEffect } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
@@ -21,7 +20,8 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { API_URL } from '../config';
-import type { Project } from '../types';
+import { useProjects } from '../hooks/useProjects';
+import { useEffect } from 'react';
 
 const formSchema = z.object({
   projectId: z.number({
@@ -35,8 +35,7 @@ const formSchema = z.object({
 type FormValues = z.infer<typeof formSchema>;
 
 export default function LogSession() {
-  const [projects, setProjects] = useState<Project[]>([]);
-  const [projectsLoading, setProjectsLoading] = useState(true);
+  const { projects, loading: projectsLoading, error: projectsError } = useProjects();
 
   const form = useForm<FormValues>({
     resolver: zodResolver(formSchema),
@@ -47,18 +46,10 @@ export default function LogSession() {
   });
 
   useEffect(() => {
-    fetch(`${API_URL}/projects`)
-      .then((response) => response.json())
-      .then((data) => {
-        setProjects(data);
-        setProjectsLoading(false);
-      })
-      .catch((error) => {
-        console.error('Error fetching projects:', error);
-        setProjectsLoading(false);
-        toast.error('Failed to load projects');
-      });
-  }, []);
+    if (projectsError) {
+      toast.error('Failed to load projects');
+    }
+  }, [projectsError]);
 
   const onSubmit = async (values: FormValues) => {
     const now = new Date();

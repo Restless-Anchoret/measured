@@ -1,4 +1,3 @@
-import { useState, useEffect } from 'react';
 import {
   Table,
   TableBody,
@@ -8,25 +7,10 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { Spinner } from '@/components/ui/spinner';
-import { API_URL } from '../config';
-import type { Project } from '../types';
+import { useProjects } from '../hooks/useProjects';
 
 export default function Projects() {
-  const [projects, setProjects] = useState<Project[]>([]);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    fetch(`${API_URL}/projects`)
-      .then((response) => response.json())
-      .then((data) => {
-        setProjects(data);
-        setLoading(false);
-      })
-      .catch((error) => {
-        console.error('Error fetching projects:', error);
-        setLoading(false);
-      });
-  }, []);
+  const { projects, loading } = useProjects();
 
   if (loading) {
     return (
