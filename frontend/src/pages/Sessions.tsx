@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { toast } from 'sonner';
 import {
   Table,
   TableBody,
@@ -9,45 +10,31 @@ import {
 } from '@/components/ui/table';
 import { Spinner } from '@/components/ui/spinner';
 import { Pagination } from '@/components/ui/pagination';
-import { API_URL } from '../config';
-import type { Session, PaginatedSessions } from '../types';
 import { useProjects } from '../hooks/useProjects';
+import { useSessions } from '../hooks/useSessions';
 
-const PAGE_SIZE = 10;
+const PAGE_SIZE = 20;
 
 export default function Sessions() {
-  const [sessions, setSessions] = useState<Session[]>([]);
-  const { projects, loading: loadingProjects } = useProjects();
-  const [loadingSessions, setLoadingSessions] = useState(true);
+  const { projects, loading: loadingProjects, error: projectsError } = useProjects();
   const [page, setPage] = useState(1);
-  const [total, setTotal] = useState(0);
+  
+  const { sessionsPage, totalPages, loading: loadingSessions, error: sessionsError } = useSessions({
+    page,
+    pageSize: PAGE_SIZE,
+  });
 
-  // Fetch sessions when page changes
   useEffect(() => {
-    const controller = new AbortController();
-    
-    const fetchSessions = async () => {
-      setLoadingSessions(true);
-      try {
-        const response = await fetch(
-          `${API_URL}/sessions?page=${page}&page_size=${PAGE_SIZE}`,
-          { signal: controller.signal }
-        );
-        const data: PaginatedSessions = await response.json();
-        setSessions(data.items);
-        setTotal(data.total);
-        setLoadingSessions(false);
-      } catch (error) {
-        if ((error as Error).name === 'AbortError') return; // Ignore abort errors
-        console.error('Error fetching sessions:', error);
-        setSessions([]);
-        setLoadingSessions(false);
-      }
-    };
-    
-    fetchSessions();
-    return () => controller.abort();
-  }, [page]);
+    if (projectsError) {
+      toast.error('Failed to load projects');
+    }
+  }, [projectsError]);
+
+  useEffect(() => {
+    if (sessionsError) {
+      toast.error('Failed to load sessions');
+    }
+  }, [sessionsError]);
 
   const getProjectName = (projectId: number): string => {
     const project = projects.find((p) => p.id === projectId);
@@ -70,8 +57,8 @@ export default function Sessions() {
     return date.toLocaleDateString();
   };
 
-  const totalPages = Math.ceil(total / PAGE_SIZE);
   const isLoading = loadingProjects || loadingSessions;
+  const sessions = sessionsPage?.items || [];
 
   if (isLoading && sessions.length === 0) {
     return (
