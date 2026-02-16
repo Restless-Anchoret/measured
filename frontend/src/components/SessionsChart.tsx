@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { startOfWeek, addDays, addWeeks, addMonths, format, addDays as addOneDay } from 'date-fns';
 import type { DateRange, Session, Project } from '@/types';
 import { useSessions } from '@/hooks/useSessions';
@@ -183,6 +183,14 @@ function getSegmentBorderRadius(isFirst: boolean, isLast: boolean): React.CSSPro
 }
 
 export default function SessionsChart({ dateRange, verbose = false }: SessionsChartProps) {
+  const [activeTooltip, setActiveTooltip] = useState<string | null>(null);
+  const [isTouchDevice, setIsTouchDevice] = useState(false);
+
+  // Detect if device supports touch
+  useMemo(() => {
+    setIsTouchDevice('ontouchstart' in window || navigator.maxTouchPoints > 0);
+  }, []);
+
   const { sessionsPage, loading, error } = useSessions({
     page: 1,
     pageSize: 1000,
@@ -281,7 +289,7 @@ export default function SessionsChart({ dateRange, verbose = false }: SessionsCh
   }, [aggregatedSessionsTimeSegments]);
 
   return (
-    <div className="mt-6 space-y-4">
+    <div className="mt-6 space-y-4" onClick={isTouchDevice ? () => setActiveTooltip(null) : undefined}>
       {/* Visual Chart */}
       <div className="p-4 border rounded-md bg-card">
         <h2 className="text-lg font-semibold mb-4">Sessions Timeline</h2>
@@ -301,12 +309,18 @@ export default function SessionsChart({ dateRange, verbose = false }: SessionsCh
                         const widthPercent = (session.durationInMinutes / maxDuration) * 100;
                         const isFirst = sessionIndex === 0;
                         const isLast = sessionIndex === segment.sessions.length - 1;
+                        const tooltipKey = `${segmentIndex}-${sessionIndex}`;
+                        const isTooltipVisible = activeTooltip === tooltipKey;
                         
                         return (
                           <div
                             key={sessionIndex}
                             className="h-full relative group cursor-pointer"
                             style={{ width: `${widthPercent}%` }}
+                            onClick={isTouchDevice ? (e) => {
+                              e.stopPropagation();
+                              setActiveTooltip(isTooltipVisible ? null : tooltipKey);
+                            } : undefined}
                           >
                             {/* Color segments */}
                             <div className="w-full h-full flex items-center justify-center">
@@ -340,6 +354,7 @@ export default function SessionsChart({ dateRange, verbose = false }: SessionsCh
                             {/* Tooltip */}
                             <Tooltip
                               text={`${session.project.name}: ${formatDurationInMinutes(session.durationInMinutes)}`}
+                              visible={isTouchDevice && isTooltipVisible}
                             />
                           </div>
                         );

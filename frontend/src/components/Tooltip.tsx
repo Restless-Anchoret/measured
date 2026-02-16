@@ -1,11 +1,12 @@
 interface TooltipProps {
   text: string;
+  visible: boolean;
 }
 
-export default function Tooltip({ text }: TooltipProps) {
+export default function Tooltip({ text, visible }: TooltipProps) {
   return (
     <div 
-      className="absolute left-1/2 -translate-x-1/2 bottom-full mb-2 opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none z-50"
+      className={`absolute left-1/2 -translate-x-1/2 bottom-full mb-2 transition-opacity duration-200 pointer-events-none z-50 ${visible ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}
     >
       <div className="relative bg-slate-900 text-white px-3 py-1.5 rounded shadow-lg">
         <div className="text-xs whitespace-nowrap">
