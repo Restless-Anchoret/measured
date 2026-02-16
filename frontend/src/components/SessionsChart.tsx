@@ -1,18 +1,19 @@
 import { useMemo } from 'react';
-import { startOfWeek, addDays, addWeeks, addMonths } from 'date-fns';
+import { startOfWeek, addDays, addWeeks, addMonths, format, addDays as addOneDay } from 'date-fns';
 import type { DateRange, Session, Project } from '@/types';
 import { useSessions } from '@/hooks/useSessions';
 import { useProjects } from '@/hooks/useProjects';
 
 interface SessionsChartProps {
   dateRange: DateRange;
+  verbose?: boolean;
 }
 
 interface CompletedSession {
   id: number;
-  project_id: number;
-  start_time: Date;
-  duration_in_minutes: number;
+  projectId: number;
+  startTime: Date;
+  durationInMinutes: number;
 }
 
 interface TimeSegment {
@@ -27,12 +28,13 @@ interface SessionsTimeSegment {
 
 interface AggregatedSession {
   project: Project;
-  duration_in_minutes: number;
+  durationInMinutes: number;
 }
 
 interface AggregatedSessionsTimeSegment {
   timeSegment: TimeSegment;
   sessions: AggregatedSession[];
+  totalDuration: number;
 }
 
 function buildTimeSegments(dateRange: DateRange): TimeSegment[] {
@@ -83,9 +85,9 @@ function convertToCompletedSessions(sessions: Session[]): CompletedSession[] {
       
       return {
         id: session.id,
-        project_id: session.project_id,
-        start_time: new Date(session.start_time),
-        duration_in_minutes: durationInMinutes,
+        projectId: session.project_id,
+        startTime: new Date(session.start_time),
+        durationInMinutes: durationInMinutes,
       };
     });
 }
@@ -110,7 +112,7 @@ function groupSessionsIntoTimeSegments(
     // Sessions are processed from end to start
     while (sessionIndex >= 0) {
       const session = completedSessions[sessionIndex];
-      const sessionStartTime = session.start_time.getTime();
+      const sessionStartTime = session.startTime.getTime();
       const segmentStartTime = segment.start.getTime();
       const segmentEndTime = segment.end.getTime();
 
@@ -138,36 +140,39 @@ function aggregateSessionsByProject(
   projects: Project[]
 ): AggregatedSessionsTimeSegment[] {
   return sessionsTimeSegments.map(segment => {
-    // Group sessions by project_id
+    // Group sessions by projectId
     const sessionsByProjectId = new Map<number, number>();
     
     for (const session of segment.sessions) {
-      const currentDuration = sessionsByProjectId.get(session.project_id) || 0;
-      sessionsByProjectId.set(session.project_id, currentDuration + session.duration_in_minutes);
+      const currentDuration = sessionsByProjectId.get(session.projectId) || 0;
+      sessionsByProjectId.set(session.projectId, currentDuration + session.durationInMinutes);
     }
     
     // Create aggregated sessions
     const aggregatedSessions: AggregatedSession[] = [];
+    let totalDuration = 0;
     
-    for (const [projectId, totalDuration] of sessionsByProjectId) {
+    for (const [projectId, duration] of sessionsByProjectId) {
       const project = projects.find(p => p.id === projectId);
       
       if (project) {
         aggregatedSessions.push({
           project,
-          duration_in_minutes: totalDuration,
+          durationInMinutes: duration,
         });
+        totalDuration += duration;
       }
     }
     
     return {
       timeSegment: segment.timeSegment,
       sessions: aggregatedSessions,
+      totalDuration,
     };
   });
 }
 
-export default function SessionsChart({ dateRange }: SessionsChartProps) {
+export default function SessionsChart({ dateRange, verbose = false }: SessionsChartProps) {
   const { sessionsPage, loading, error } = useSessions({
     page: 1,
     pageSize: 1000,
@@ -221,95 +226,226 @@ export default function SessionsChart({ dateRange }: SessionsChartProps) {
     return `${hours}h ${minutes}m`;
   };
 
+  // Format segment label based on aggregation type
+  const formatSegmentLabel = (segment: TimeSegment): string => {
+    const start = segment.start;
+    const end = segment.end;
+
+    switch (dateRange.aggregationBy) {
+      case 'day':
+        return format(start, 'dd.MM');
+      case 'week':
+        const weekEnd = addOneDay(end, -1);
+        return `${format(start, 'dd.MM')} - ${format(weekEnd, 'dd.MM')}`;
+      case 'month':
+        return format(start, 'MMMM');
+    }
+  };
+
+  // Format duration in minutes to readable string
+  const formatDurationInMinutes = (minutes: number): string => {
+    if (minutes === 0) {
+      return '0';
+    }
+    
+    const hours = Math.floor(minutes / 60);
+    const remainingMinutes = minutes % 60;
+    
+    if (hours === 0) {
+      return `${remainingMinutes}m`;
+    }
+    
+    if (remainingMinutes === 0) {
+      return `${hours}h`;
+    }
+    
+    return `${hours}h ${remainingMinutes}m`;
+  };
+
+  // Calculate max total duration for proportional sizing
+  const maxDuration = useMemo(() => {
+    return Math.max(
+      ...aggregatedSessionsTimeSegments.map(segment => segment.totalDuration),
+      1 // Minimum 1 to avoid division by zero
+    );
+  }, [aggregatedSessionsTimeSegments]);
+
   return (
-    <div className="mt-6 p-4 border rounded-md bg-muted/50">
-      <h2 className="text-lg font-semibold mb-2">Selected Interval:</h2>
-      <div className="space-y-1 text-sm">
-        <p>
-          <span className="font-medium">From Date:</span>{' '}
-          {dateRange.fromDate.toLocaleDateString()}
-        </p>
-        <p>
-          <span className="font-medium">To Date (exclusive):</span>{' '}
-          {dateRange.toDate.toLocaleDateString()}
-        </p>
-        <p>
-          <span className="font-medium">Interval Kind:</span>{' '}
-          {dateRange.intervalKind}
-        </p>
-        <p>
-          <span className="font-medium">Aggregation By:</span>{' '}
-          {dateRange.aggregationBy}
-        </p>
-      </div>
-
-      <div className="mt-4 pt-4 border-t space-y-1 text-sm">
-        {loading && <p className="text-muted-foreground">Loading sessions...</p>}
-        {error && <p className="text-destructive">Error loading sessions: {error.message}</p>}
-        {sessionsPage && (
-          <>
-            <p>
-              <span className="font-medium">Sessions in Period:</span>{' '}
-              {sessionsPage.items.length}
-            </p>
-            <p>
-              <span className="font-medium">Total Duration:</span>{' '}
-              {formatDuration(totalDuration)}
-            </p>
-          </>
-        )}
-      </div>
-
-      {/* Aggregated Sessions by Time Segment */}
-      <div className="mt-6 pt-4 border-t">
-        <h3 className="text-md font-semibold mb-3">Aggregated Sessions by Time Segment:</h3>
-        {projectsLoading && <p className="text-sm text-muted-foreground">Loading projects...</p>}
-        {projectsError && <p className="text-sm text-destructive">Error loading projects: {projectsError.message}</p>}
-        
-        {aggregatedSessionsTimeSegments.length === 0 && !projectsLoading && (
-          <p className="text-sm text-muted-foreground">No aggregated sessions to display.</p>
-        )}
-        
-        <div className="space-y-4">
-          {aggregatedSessionsTimeSegments.map((segment, segmentIndex) => (
-            <div key={segmentIndex} className="p-3 bg-background rounded-md border">
-              <div className="mb-2">
-                <span className="text-sm font-medium">Time Segment #{segmentIndex + 1}:</span>
-                <div className="text-sm text-muted-foreground ml-4">
-                  <div>Start: {segment.timeSegment.start.toLocaleString()}</div>
-                  <div>End: {segment.timeSegment.end.toLocaleString()}</div>
+    <div className="mt-6 space-y-4">
+      {/* Visual Chart */}
+      <div className="p-4 border rounded-md bg-card">
+        <h2 className="text-lg font-semibold mb-4">Sessions Timeline</h2>
+        <div className="space-y-2">
+          {aggregatedSessionsTimeSegments.map((segment, segmentIndex) => {
+            return (
+              <div key={segmentIndex} className="flex items-center gap-3 relative">
+                {/* Segment Label */}
+                <div className="w-32 text-sm font-medium text-right flex-shrink-0">
+                  {formatSegmentLabel(segment.timeSegment)}
                 </div>
-              </div>
-              
-              {segment.sessions.length === 0 ? (
-                <p className="text-sm text-muted-foreground ml-4">No sessions in this segment</p>
-              ) : (
-                <div className="ml-4 space-y-2">
-                  <div className="text-sm font-medium">Projects and Durations:</div>
-                  {segment.sessions.map((session, sessionIndex) => (
-                    <div key={sessionIndex} className="text-sm ml-4 flex justify-between items-center">
-                      <span>
-                        <span className="font-medium">{session.project.name}</span>
-                        <span className="text-muted-foreground"> (ID: {session.project.id})</span>
-                      </span>
-                      <span className="font-mono">
-                        {Math.floor(session.duration_in_minutes / 60)}h {session.duration_in_minutes % 60}m
-                      </span>
-                    </div>
-                  ))}
-                  <div className="text-sm ml-4 pt-2 border-t">
-                    <span className="font-medium">Total in segment: </span>
-                    <span className="font-mono">
-                      {Math.floor(segment.sessions.reduce((sum, s) => sum + s.duration_in_minutes, 0) / 60)}h{' '}
-                      {segment.sessions.reduce((sum, s) => sum + s.duration_in_minutes, 0) % 60}m
-                    </span>
+                
+                {/* Visual Bar */}
+                <div className="flex-1">
+                  <div className="flex items-center h-8 bg-muted/30 rounded relative">
+                    {segment.sessions.map((session, sessionIndex) => {
+                        const widthPercent = (session.durationInMinutes / maxDuration) * 100;
+                        
+                        return (
+                          <div
+                            key={sessionIndex}
+                            className="h-full relative group cursor-pointer"
+                            style={{ width: `${widthPercent}%` }}
+                          >
+                            {/* Color segments */}
+                            <div className="w-full h-full flex items-center justify-center">
+                              {session.project.extraColor ? (
+                                // Two-color gradient for projects with extraColor
+                                <div className="w-full h-full flex flex-col">
+                                  <div
+                                    className="w-full h-1/2 transition-opacity group-hover:opacity-80"
+                                    style={{ backgroundColor: session.project.color }}
+                                  />
+                                  <div
+                                    className="w-full h-1/2 transition-opacity group-hover:opacity-80"
+                                    style={{ backgroundColor: session.project.extraColor }}
+                                  />
+                                </div>
+                              ) : (
+                                // Single color
+                                <div
+                                  className="w-full h-full transition-opacity group-hover:opacity-80"
+                                  style={{ backgroundColor: session.project.color }}
+                                />
+                              )}
+                            </div>
+                            
+                            {/* Tooltip positioned relative to this segment */}
+                            <div 
+                              className="absolute left-1/2 -translate-x-1/2 bottom-full mb-2 opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none z-50"
+                            >
+                              <div className="relative bg-slate-900 text-white px-3 py-1.5 rounded shadow-lg">
+                                <div className="text-xs whitespace-nowrap">
+                                  {session.project.name}: {formatDurationInMinutes(session.durationInMinutes)}
+                                </div>
+                                {/* Arrow pointing down */}
+                                <div 
+                                  className="absolute left-1/2 top-full -translate-x-1/2 w-0 h-0"
+                                  style={{
+                                    borderLeft: '6px solid transparent',
+                                    borderRight: '6px solid transparent',
+                                    borderTop: '6px solid rgb(15 23 42)',
+                                    marginTop: '-1px'
+                                  }}
+                                />
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
                   </div>
                 </div>
-              )}
-            </div>
-          ))}
+                
+                {/* Duration Label */}
+                <div className="w-20 text-sm text-muted-foreground flex-shrink-0">
+                  {segment.totalDuration > 0 ? formatDurationInMinutes(segment.totalDuration) : '-'}
+                </div>
+              </div>
+            );
+          })}
         </div>
       </div>
+
+      {/* Verbose Details */}
+      {verbose && (
+        <div className="p-4 border rounded-md bg-muted/50">
+          <h2 className="text-lg font-semibold mb-2">Selected Interval:</h2>
+          <div className="space-y-1 text-sm">
+            <p>
+              <span className="font-medium">From Date:</span>{' '}
+              {dateRange.fromDate.toLocaleDateString()}
+            </p>
+            <p>
+              <span className="font-medium">To Date (exclusive):</span>{' '}
+              {dateRange.toDate.toLocaleDateString()}
+            </p>
+            <p>
+              <span className="font-medium">Interval Kind:</span>{' '}
+              {dateRange.intervalKind}
+            </p>
+            <p>
+              <span className="font-medium">Aggregation By:</span>{' '}
+              {dateRange.aggregationBy}
+            </p>
+          </div>
+
+          <div className="mt-4 pt-4 border-t space-y-1 text-sm">
+            {loading && <p className="text-muted-foreground">Loading sessions...</p>}
+            {error && <p className="text-destructive">Error loading sessions: {error.message}</p>}
+            {sessionsPage && (
+              <>
+                <p>
+                  <span className="font-medium">Sessions in Period:</span>{' '}
+                  {sessionsPage.items.length}
+                </p>
+                <p>
+                  <span className="font-medium">Total Duration:</span>{' '}
+                  {formatDuration(totalDuration)}
+                </p>
+              </>
+            )}
+          </div>
+
+          {/* Aggregated Sessions by Time Segment */}
+          <div className="mt-6 pt-4 border-t">
+            <h3 className="text-md font-semibold mb-3">Aggregated Sessions by Time Segment:</h3>
+            {projectsLoading && <p className="text-sm text-muted-foreground">Loading projects...</p>}
+            {projectsError && <p className="text-sm text-destructive">Error loading projects: {projectsError.message}</p>}
+            
+            {aggregatedSessionsTimeSegments.length === 0 && !projectsLoading && (
+              <p className="text-sm text-muted-foreground">No aggregated sessions to display.</p>
+            )}
+            
+            <div className="space-y-4">
+              {aggregatedSessionsTimeSegments.map((segment, segmentIndex) => (
+                <div key={segmentIndex} className="p-3 bg-background rounded-md border">
+                  <div className="mb-2">
+                    <span className="text-sm font-medium">Time Segment #{segmentIndex + 1}:</span>
+                    <div className="text-sm text-muted-foreground ml-4">
+                      <div>Start: {segment.timeSegment.start.toLocaleString()}</div>
+                      <div>End: {segment.timeSegment.end.toLocaleString()}</div>
+                    </div>
+                  </div>
+                  
+                  {segment.sessions.length === 0 ? (
+                    <p className="text-sm text-muted-foreground ml-4">No sessions in this segment</p>
+                  ) : (
+                    <div className="ml-4 space-y-2">
+                      <div className="text-sm font-medium">Projects and Durations:</div>
+                      {segment.sessions.map((session, sessionIndex) => (
+                        <div key={sessionIndex} className="text-sm ml-4 flex justify-between items-center">
+                          <span>
+                            <span className="font-medium">{session.project.name}</span>
+                            <span className="text-muted-foreground"> (ID: {session.project.id})</span>
+                          </span>
+                          <span className="font-mono">
+                            {formatDurationInMinutes(session.durationInMinutes)}
+                          </span>
+                        </div>
+                      ))}
+                      <div className="text-sm ml-4 pt-2 border-t">
+                        <span className="font-medium">Total in segment: </span>
+                        <span className="font-mono">
+                          {formatDurationInMinutes(segment.totalDuration)}
+                        </span>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

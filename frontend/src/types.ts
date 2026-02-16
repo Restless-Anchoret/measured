@@ -1,6 +1,8 @@
 export interface Project {
   id: number;
   name: string;
+  color: string;
+  extraColor: string | null;
 }
 
 export interface Session {
