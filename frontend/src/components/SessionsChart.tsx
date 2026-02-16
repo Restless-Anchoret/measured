@@ -279,9 +279,9 @@ export default function SessionsChart({ dateRange, verbose = false }: SessionsCh
         <div className="space-y-2">
           {aggregatedSessionsTimeSegments.map((segment, segmentIndex) => {
             return (
-              <div key={segmentIndex} className="flex items-center gap-3 relative">
+              <div key={segmentIndex} className="flex items-center gap-1 sm:gap-2 md:gap-3 relative">
                 {/* Segment Label */}
-                <div className="w-32 text-sm font-medium text-right flex-shrink-0">
+                <div className="w-14 sm:w-24 md:w-32 text-xs sm:text-sm font-medium text-right flex-shrink-0">
                   {formatSegmentLabel(segment.timeSegment)}
                 </div>
                 
@@ -331,7 +331,7 @@ export default function SessionsChart({ dateRange, verbose = false }: SessionsCh
                 </div>
                 
                 {/* Duration Label */}
-                <div className="w-20 text-sm text-muted-foreground flex-shrink-0">
+                <div className="w-12 sm:w-16 md:w-20 text-xs sm:text-sm text-muted-foreground flex-shrink-0">
                   {segment.totalDuration > 0 ? formatDurationInMinutes(segment.totalDuration) : '-'}
                 </div>
               </div>
