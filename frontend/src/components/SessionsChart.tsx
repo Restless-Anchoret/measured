@@ -291,20 +291,20 @@ export default function SessionsChart({ dateRange, verbose = false }: SessionsCh
   return (
     <div className="mt-6 space-y-4" onClick={isTouchDevice ? () => setActiveTooltip(null) : undefined}>
       {/* Visual Chart */}
-      <div className="p-4 border rounded-md bg-card">
+      <div className="bg-card">
         <h2 className="text-lg font-semibold mb-4">Sessions Timeline</h2>
-        <div className="space-y-2">
+        <div className={`grid gap-y-2 items-center ${isTouchDevice ? 'grid-cols-[auto_1fr]' : 'grid-cols-[auto_1fr_auto]'} gap-x-1 sm:gap-x-2 md:gap-x-3`}>
           {aggregatedSessionsTimeSegments.map((segment, segmentIndex) => {
             return (
-              <div key={segmentIndex} className="flex items-center gap-1 sm:gap-2 md:gap-3 relative">
+              <>
                 {/* Segment Label */}
-                <div className="w-14 sm:w-24 md:w-32 text-xs sm:text-sm font-medium text-right flex-shrink-0">
+                <div key={`label-${segmentIndex}`} className="text-xs sm:text-sm font-medium text-right">
                   {formatSegmentLabel(segment.timeSegment)}
                 </div>
                 
                 {/* Visual Bar */}
-                <div className="flex-1">
-                  <div className="flex items-center h-8 bg-muted/30 rounded relative">
+                <div key={`bar-${segmentIndex}`} className="relative">
+                  <div className="flex items-center h-6 bg-muted/30 rounded relative">
                     {segment.sessions.map((session, sessionIndex) => {
                         const widthPercent = (session.durationInMinutes / maxDuration) * 100;
                         const isFirst = sessionIndex === 0;
@@ -363,10 +363,12 @@ export default function SessionsChart({ dateRange, verbose = false }: SessionsCh
                 </div>
                 
                 {/* Duration Label */}
-                <div className="w-12 sm:w-16 md:w-20 text-xs sm:text-sm text-muted-foreground flex-shrink-0">
-                  {segment.totalDuration > 0 ? formatDurationInMinutes(segment.totalDuration) : '-'}
-                </div>
-              </div>
+                {!isTouchDevice && (
+                  <div key={`duration-${segmentIndex}`} className="text-xs sm:text-sm text-muted-foreground">
+                    {segment.totalDuration > 0 ? formatDurationInMinutes(segment.totalDuration) : '-'}
+                  </div>
+                )}
+              </>
             );
           })}
         </div>
