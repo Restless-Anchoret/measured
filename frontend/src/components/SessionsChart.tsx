@@ -173,6 +173,15 @@ function aggregateSessionsByProject(
   });
 }
 
+function getSegmentBorderRadius(isFirst: boolean, isLast: boolean): React.CSSProperties {
+  return {
+    borderTopLeftRadius: isFirst ? '0.375rem' : '0',
+    borderBottomLeftRadius: isFirst ? '0.375rem' : '0',
+    borderTopRightRadius: isLast ? '0.375rem' : '0',
+    borderBottomRightRadius: isLast ? '0.375rem' : '0',
+  };
+}
+
 export default function SessionsChart({ dateRange, verbose = false }: SessionsChartProps) {
   const { sessionsPage, loading, error } = useSessions({
     page: 1,
@@ -290,6 +299,8 @@ export default function SessionsChart({ dateRange, verbose = false }: SessionsCh
                   <div className="flex items-center h-8 bg-muted/30 rounded relative">
                     {segment.sessions.map((session, sessionIndex) => {
                         const widthPercent = (session.durationInMinutes / maxDuration) * 100;
+                        const isFirst = sessionIndex === 0;
+                        const isLast = sessionIndex === segment.sessions.length - 1;
                         
                         return (
                           <div
@@ -301,7 +312,10 @@ export default function SessionsChart({ dateRange, verbose = false }: SessionsCh
                             <div className="w-full h-full flex items-center justify-center">
                               {session.project.extraColor ? (
                                 // Two-color gradient for projects with extraColor
-                                <div className="w-full h-full flex flex-col">
+                                <div 
+                                  className="w-full h-full flex flex-col overflow-hidden"
+                                  style={getSegmentBorderRadius(isFirst, isLast)}
+                                >
                                   <div
                                     className="w-full h-1/2 transition-opacity group-hover:opacity-80"
                                     style={{ backgroundColor: session.project.color }}
@@ -315,7 +329,10 @@ export default function SessionsChart({ dateRange, verbose = false }: SessionsCh
                                 // Single color
                                 <div
                                   className="w-full h-full transition-opacity group-hover:opacity-80"
-                                  style={{ backgroundColor: session.project.color }}
+                                  style={{ 
+                                    backgroundColor: session.project.color,
+                                    ...getSegmentBorderRadius(isFirst, isLast),
+                                  }}
                                 />
                               )}
                             </div>
