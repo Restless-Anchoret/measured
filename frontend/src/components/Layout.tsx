@@ -2,7 +2,7 @@ import type { ReactNode } from 'react';
 import { useState, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
-import { Menu, X, Clock, List, Folder, BarChart3 } from 'lucide-react';
+import { Menu, X, Clock, List, BarChart3 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 interface LayoutProps {
