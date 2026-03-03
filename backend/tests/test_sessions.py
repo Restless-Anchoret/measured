@@ -477,3 +477,175 @@ async def test_get_sessions_time_filter_boundary(client: AsyncClient):
     for session in data["items"]:
         assert session["start_time"] != boundary_time.isoformat()
 
+
+@pytest.mark.asyncio
+async def test_get_sessions_filter_by_single_project(client: AsyncClient):
+    """Test filtering sessions by a single project ID."""
+    # Get first two projects
+    projects_response = await client.get("/api/projects")
+    projects = projects_response.json()
+    assert len(projects) >= 2, "Need at least 2 projects for this test"
+    
+    project1_id = projects[0]["id"]
+    project2_id = projects[1]["id"]
+    
+    base_time = datetime(2024, 7, 1, 12, 0, 0)
+    
+    # Create 3 sessions for project 1
+    for i in range(3):
+        await create_session(
+            client,
+            project1_id,
+            base_time + timedelta(hours=i),
+            base_time + timedelta(hours=i, minutes=30)
+        )
+    
+    # Create 2 sessions for project 2
+    for i in range(2):
+        await create_session(
+            client,
+            project2_id,
+            base_time + timedelta(hours=i+3),
+            base_time + timedelta(hours=i+3, minutes=30)
+        )
+    
+    # Filter by project 1 only
+    response = await client.get(f"/api/sessions?project_id={project1_id}")
+    
+    assert response.status_code == 200
+    data = response.json()
+    
+    assert data["total"] == 3
+    assert len(data["items"]) == 3
+    
+    # Verify all returned sessions belong to project 1
+    for session in data["items"]:
+        assert session["project_id"] == project1_id
+
+
+@pytest.mark.asyncio
+async def test_get_sessions_filter_by_multiple_projects(client: AsyncClient):
+    """Test filtering sessions by multiple project IDs."""
+    # Get first three projects
+    projects_response = await client.get("/api/projects")
+    projects = projects_response.json()
+    assert len(projects) >= 3, "Need at least 3 projects for this test"
+    
+    project1_id = projects[0]["id"]
+    project2_id = projects[1]["id"]
+    project3_id = projects[2]["id"]
+    
+    base_time = datetime(2024, 8, 1, 12, 0, 0)
+    
+    # Create sessions for each project
+    await create_session(client, project1_id, base_time, base_time + timedelta(hours=1))
+    await create_session(client, project1_id, base_time + timedelta(hours=1), base_time + timedelta(hours=2))
+    await create_session(client, project2_id, base_time + timedelta(hours=2), base_time + timedelta(hours=3))
+    await create_session(client, project3_id, base_time + timedelta(hours=3), base_time + timedelta(hours=4))
+    
+    # Filter by projects 1 and 2 (should get 3 sessions total)
+    response = await client.get(f"/api/sessions?project_id={project1_id}&project_id={project2_id}")
+    
+    assert response.status_code == 200
+    data = response.json()
+    
+    assert data["total"] == 3
+    assert len(data["items"]) == 3
+    
+    # Verify all returned sessions belong to project 1 or project 2
+    for session in data["items"]:
+        assert session["project_id"] in [project1_id, project2_id]
+    
+    # Verify project 3 session is not included
+    project_ids_in_results = [s["project_id"] for s in data["items"]]
+    assert project3_id not in project_ids_in_results
+
+
+@pytest.mark.asyncio
+async def test_get_sessions_filter_by_project_no_results(client: AsyncClient):
+    """Test filtering by a project that has no sessions."""
+    projects_response = await client.get("/api/projects")
+    projects = projects_response.json()
+    assert len(projects) >= 2, "Need at least 2 projects for this test"
+    
+    project1_id = projects[0]["id"]
+    project2_id = projects[1]["id"]
+    
+    # Create sessions only for project 1
+    base_time = datetime(2024, 9, 1, 12, 0, 0)
+    await create_session(client, project1_id, base_time, base_time + timedelta(hours=1))
+    
+    # Filter by project 2 (should return no results)
+    response = await client.get(f"/api/sessions?project_id={project2_id}")
+    
+    assert response.status_code == 200
+    data = response.json()
+    
+    assert data["total"] == 0
+    assert len(data["items"]) == 0
+
+
+@pytest.mark.asyncio
+async def test_get_sessions_filter_by_project_with_time_filters(client: AsyncClient):
+    """Test combining project_id filter with time filters."""
+    projects_response = await client.get("/api/projects")
+    projects = projects_response.json()
+    assert len(projects) >= 2, "Need at least 2 projects for this test"
+    
+    project1_id = projects[0]["id"]
+    project2_id = projects[1]["id"]
+    
+    base_time = datetime(2024, 10, 1, 12, 0, 0)
+    
+    # Create sessions for project 1 at different times
+    await create_session(client, project1_id, base_time, base_time + timedelta(hours=1))
+    await create_session(client, project1_id, base_time + timedelta(hours=5), base_time + timedelta(hours=6))
+    
+    # Create sessions for project 2 at different times
+    await create_session(client, project2_id, base_time + timedelta(hours=2), base_time + timedelta(hours=3))
+    await create_session(client, project2_id, base_time + timedelta(hours=7), base_time + timedelta(hours=8))
+    
+    # Filter by project 1 with time range that only includes the second session
+    min_time = (base_time + timedelta(hours=4)).isoformat()
+    max_time = (base_time + timedelta(hours=7)).isoformat()
+    response = await client.get(f"/api/sessions?project_id={project1_id}&min_start_time={min_time}&max_start_time={max_time}")
+    
+    assert response.status_code == 200
+    data = response.json()
+    
+    # Should only get 1 session (project 1, starting at 17:00)
+    assert data["total"] == 1
+    assert len(data["items"]) == 1
+    assert data["items"][0]["project_id"] == project1_id
+    assert data["items"][0]["start_time"] >= min_time
+    assert data["items"][0]["start_time"] < max_time
+
+
+@pytest.mark.asyncio
+async def test_get_sessions_filter_by_project_with_pagination(client: AsyncClient):
+    """Test filtering by project ID with pagination."""
+    projects_response = await client.get("/api/projects")
+    projects = projects_response.json()
+    project_id = projects[0]["id"]
+    
+    base_time = datetime(2024, 11, 1, 12, 0, 0)
+    
+    # Create 5 sessions for the project
+    start_times = [base_time + timedelta(hours=i) for i in range(5)]
+    await create_multiple_sessions(client, project_id, start_times, duration=timedelta(hours=1))
+    
+    # Filter by project with pagination (page_size=2)
+    response = await client.get(f"/api/sessions?project_id={project_id}&page=1&page_size=2")
+    
+    assert response.status_code == 200
+    data = response.json()
+    
+    assert data["total"] == 5
+    assert len(data["items"]) == 2
+    assert data["page"] == 1
+    assert data["page_size"] == 2
+    
+    # All items should belong to the filtered project
+    for session in data["items"]:
+        assert session["project_id"] == project_id
+

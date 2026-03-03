@@ -49,7 +49,8 @@ async def get_sessions(
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=1000),
     min_start_time: Optional[datetime] = Query(None, description="Minimum start time (inclusive) as UTC timestamp"),
-    max_start_time: Optional[datetime] = Query(None, description="Maximum start time (exclusive) as UTC timestamp")
+    max_start_time: Optional[datetime] = Query(None, description="Maximum start time (exclusive) as UTC timestamp"),
+    project_id: Optional[list[int]] = Query(None, description="Filter by one or more project IDs")
 ):
     """Get paginated list of sessions"""
     offset = (page - 1) * page_size
@@ -65,6 +66,13 @@ async def get_sessions(
     if max_start_time:
         where_clauses.append("start_time < :max_start_time")
         filter_params["max_start_time"] = max_start_time.isoformat()
+    
+    if project_id:
+        # Build IN clause for multiple project IDs
+        placeholders = ",".join([f":project_id_{i}" for i in range(len(project_id))])
+        where_clauses.append(f"project_id IN ({placeholders})")
+        for i, pid in enumerate(project_id):
+            filter_params[f"project_id_{i}"] = pid
     
     where_sql = " WHERE " + " AND ".join(where_clauses) if where_clauses else ""
     
