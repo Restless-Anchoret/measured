@@ -150,3 +150,24 @@ async def update_session(
         {"session_id": session_id}
     )
     return Session.from_row(row)
+
+
+@router.delete("/sessions/{session_id}", status_code=204)
+async def delete_session(
+    session_id: int,
+    db: Annotated[databases.Database, Depends(get_db)]
+):
+    """Delete a session by ID"""
+    # Check if session exists
+    row = await db.fetch_one(
+        "SELECT id FROM sessions WHERE id = :session_id",
+        {"session_id": session_id}
+    )
+    if not row:
+        raise HTTPException(status_code=404, detail="Session not found")
+    
+    # Delete the session
+    await db.execute(
+        "DELETE FROM sessions WHERE id = :session_id",
+        {"session_id": session_id}
+    )

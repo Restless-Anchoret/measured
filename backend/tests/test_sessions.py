@@ -649,3 +649,75 @@ async def test_get_sessions_filter_by_project_with_pagination(client: AsyncClien
     for session in data["items"]:
         assert session["project_id"] == project_id
 
+
+@pytest.mark.asyncio
+async def test_delete_session(client: AsyncClient):
+    """Test deleting an existing session."""
+    project_id = await get_first_project_id(client)
+    
+    start_time = datetime.now() - timedelta(hours=2)
+    end_time = datetime.now()
+    
+    # Create a session
+    created_session = await create_session(client, project_id, start_time, end_time)
+    session_id = created_session["id"]
+    
+    # Verify session exists
+    get_response = await client.get(f"/api/sessions/{session_id}")
+    assert get_response.status_code == 200
+    
+    # Delete the session
+    delete_response = await client.delete(f"/api/sessions/{session_id}")
+    
+    assert delete_response.status_code == 204
+    assert delete_response.content == b''  # No content for 204 response
+    
+    # Verify session is deleted (should return 404)
+    get_after_delete = await client.get(f"/api/sessions/{session_id}")
+    assert get_after_delete.status_code == 404
+    assert "Session not found" in get_after_delete.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_delete_session_not_found(client: AsyncClient):
+    """Test deleting a non-existent session."""
+    response = await client.delete("/api/sessions/99999")
+    
+    assert response.status_code == 404
+    assert "Session not found" in response.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_delete_session_does_not_affect_others(client: AsyncClient):
+    """Test that deleting a session doesn't affect other sessions."""
+    project_id = await get_first_project_id(client)
+    
+    base_time = datetime(2024, 12, 1, 12, 0, 0)
+    
+    # Create 3 sessions
+    session1 = await create_session(client, project_id, base_time, base_time + timedelta(hours=1))
+    session2 = await create_session(client, project_id, base_time + timedelta(hours=2), base_time + timedelta(hours=3))
+    session3 = await create_session(client, project_id, base_time + timedelta(hours=4), base_time + timedelta(hours=5))
+    
+    # Delete the middle session
+    delete_response = await client.delete(f"/api/sessions/{session2['id']}")
+    assert delete_response.status_code == 204
+    
+    # Verify session2 is deleted
+    get_session2 = await client.get(f"/api/sessions/{session2['id']}")
+    assert get_session2.status_code == 404
+    
+    # Verify session1 and session3 still exist
+    get_session1 = await client.get(f"/api/sessions/{session1['id']}")
+    assert get_session1.status_code == 200
+    assert get_session1.json()["id"] == session1["id"]
+    
+    get_session3 = await client.get(f"/api/sessions/{session3['id']}")
+    assert get_session3.status_code == 200
+    assert get_session3.json()["id"] == session3["id"]
+    
+    # Verify total count is 2
+    sessions_response = await client.get("/api/sessions")
+    data = sessions_response.json()
+    assert data["total"] == 2
+
