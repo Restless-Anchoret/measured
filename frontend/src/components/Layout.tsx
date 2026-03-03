@@ -35,7 +35,6 @@ export default function Layout({ children }: LayoutProps) {
   const menuItems = [
     { text: 'Log\u00A0Session', path: '/log-session', icon: Clock },
     { text: 'Sessions', path: '/sessions', icon: List },
-    { text: 'Projects', path: '/projects', icon: Folder },
     { text: 'Charts', path: '/charts', icon: BarChart3 },
   ];
 
