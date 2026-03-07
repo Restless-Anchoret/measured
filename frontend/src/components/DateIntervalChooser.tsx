@@ -149,25 +149,25 @@ export default function DateIntervalChooser({ onChange }: DateIntervalChooserPro
   }, []);
 
   return (
-    <div className="flex flex-col md:flex-row items-start md:items-center gap-4">
+    <div className="flex flex-row items-center gap-2">
       {/* Interval Navigator */}
-      <div className="flex items-center gap-2 border rounded-md">
+      <div className="flex items-center h-10 border rounded-md">
         <Button
           variant="ghost"
           size="icon"
           onClick={() => handleNavigate(-1)}
-          className="h-10 w-10"
+          className="h-full w-7 rounded-r-none"
         >
           <ChevronLeft className="h-4 w-4" />
         </Button>
-        <div className="min-w-[200px] text-center text-sm font-medium">
+        <div className="min-w-[145px] text-center text-sm font-medium">
           {getDisplayText(currentDate, selectionType)}
         </div>
         <Button
           variant="ghost"
           size="icon"
           onClick={() => handleNavigate(1)}
-          className="h-10 w-10"
+          className="h-full w-7 rounded-l-none"
         >
           <ChevronRight className="h-4 w-4" />
         </Button>
@@ -175,7 +175,7 @@ export default function DateIntervalChooser({ onChange }: DateIntervalChooserPro
 
       {/* Selection Type Dropdown */}
       <Select value={selectionType} onValueChange={handleSelectionTypeChange}>
-        <SelectTrigger className="w-[180px]">
+        <SelectTrigger className="h-10 w-[150px]">
           <SelectValue />
         </SelectTrigger>
         <SelectContent>
