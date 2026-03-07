@@ -13,7 +13,7 @@ export default function Charts() {
     <div>
       <h1 className="text-4xl font-bold mb-6">Charts</h1>
       
-      <div className="mb-8 flex items-center gap-4">
+      <div className="mb-8 flex flex-wrap items-center gap-4">
         <DateIntervalChooser onChange={setSelectedInterval} />
         <ProjectFilterSelect onChange={setProjectFilter} />
       </div>
