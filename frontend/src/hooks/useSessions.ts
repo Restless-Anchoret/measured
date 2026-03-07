@@ -7,12 +7,15 @@ interface UseSessionsParams {
   pageSize: number;
   minStartTime?: Date;
   maxStartTime?: Date;
+  projectIds?: number[];
 }
 
-export function useSessions({ page, pageSize, minStartTime, maxStartTime }: UseSessionsParams) {
+export function useSessions({ page, pageSize, minStartTime, maxStartTime, projectIds }: UseSessionsParams) {
   const [sessionsPage, setSessionsPage] = useState<PaginatedSessions | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
+
+  const projectIdsKey = projectIds ? projectIds.join(',') : '';
 
   useEffect(() => {
     const controller = new AbortController();
@@ -35,6 +38,12 @@ export function useSessions({ page, pageSize, minStartTime, maxStartTime }: UseS
       params.append('max_start_time', maxStartTime.toISOString());
     }
     
+    if (projectIds && projectIds.length > 0) {
+      for (const id of projectIds) {
+        params.append('project_id', id.toString());
+      }
+    }
+    
     fetch(`${API_URL}/sessions?${params.toString()}`, { signal: controller.signal })
       .then((response) => response.json())
       .then((data: PaginatedSessions) => {
@@ -49,7 +58,8 @@ export function useSessions({ page, pageSize, minStartTime, maxStartTime }: UseS
       });
     
     return () => controller.abort();
-  }, [page, pageSize, minStartTime, maxStartTime]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [page, pageSize, minStartTime, maxStartTime, projectIdsKey]);
 
   const totalPages = sessionsPage ? Math.ceil(sessionsPage.total / pageSize) : 0;
 

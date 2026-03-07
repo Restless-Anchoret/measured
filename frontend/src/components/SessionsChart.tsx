@@ -1,12 +1,14 @@
 import { useMemo, useState } from 'react';
 import { startOfWeek, addDays, addWeeks, addMonths, format, addDays as addOneDay } from 'date-fns';
 import type { DateRange, Session, Project } from '@/types';
+import type { ProjectFilter } from '@/project_filters';
 import { useSessions } from '@/hooks/useSessions';
 import { useProjects } from '@/hooks/useProjects';
 import Tooltip from './Tooltip';
 
 interface SessionsChartProps {
   dateRange: DateRange;
+  projectFilter: ProjectFilter;
   verbose?: boolean;
 }
 
@@ -182,7 +184,7 @@ function getSegmentBorderRadius(isFirst: boolean, isLast: boolean): React.CSSPro
   };
 }
 
-export default function SessionsChart({ dateRange, verbose = false }: SessionsChartProps) {
+export default function SessionsChart({ dateRange, projectFilter, verbose = false }: SessionsChartProps) {
   const [activeTooltip, setActiveTooltip] = useState<string | null>(null);
   const [isTouchDevice, setIsTouchDevice] = useState(false);
 
@@ -191,11 +193,14 @@ export default function SessionsChart({ dateRange, verbose = false }: SessionsCh
     setIsTouchDevice('ontouchstart' in window || navigator.maxTouchPoints > 0);
   }, []);
 
+  const filterProjectIds = projectFilter.projectIds();
+
   const { sessionsPage, loading, error } = useSessions({
     page: 1,
     pageSize: 1000,
     minStartTime: dateRange.fromDate,
     maxStartTime: dateRange.toDate,
+    projectIds: filterProjectIds,
   });
 
   const { projects, loading: projectsLoading, error: projectsError } = useProjects();
