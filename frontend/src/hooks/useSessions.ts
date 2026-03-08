@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { API_URL } from '../config';
 import type { PaginatedSessions } from '../types';
 
@@ -14,6 +14,7 @@ export function useSessions({ page, pageSize, minStartTime, maxStartTime, projec
   const [sessionsPage, setSessionsPage] = useState<PaginatedSessions | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
+  const [refreshKey, setRefreshKey] = useState(0);
 
   const projectIdsKey = projectIds ? projectIds.join(',') : '';
 
@@ -24,7 +25,6 @@ export function useSessions({ page, pageSize, minStartTime, maxStartTime, projec
     setSessionsPage(null);
     setError(null);
     
-    // Build query parameters
     const params = new URLSearchParams({
       page: page.toString(),
       page_size: pageSize.toString(),
@@ -51,7 +51,7 @@ export function useSessions({ page, pageSize, minStartTime, maxStartTime, projec
         setLoading(false);
       })
       .catch((error) => {
-        if (error.name === 'AbortError') return; // Ignore abort errors
+        if (error.name === 'AbortError') return;
         console.error('Error fetching sessions:', error);
         setError(error);
         setLoading(false);
@@ -59,10 +59,14 @@ export function useSessions({ page, pageSize, minStartTime, maxStartTime, projec
     
     return () => controller.abort();
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [page, pageSize, minStartTime, maxStartTime, projectIdsKey]);
+  }, [page, pageSize, minStartTime, maxStartTime, projectIdsKey, refreshKey]);
+
+  const refetch = useCallback(() => {
+    setRefreshKey((k) => k + 1);
+  }, []);
 
   const totalPages = sessionsPage ? Math.ceil(sessionsPage.total / pageSize) : 0;
 
-  return { sessionsPage, totalPages, loading, error };
+  return { sessionsPage, totalPages, loading, error, refetch };
 }
 

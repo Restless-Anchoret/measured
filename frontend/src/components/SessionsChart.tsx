@@ -3,6 +3,7 @@ import { startOfWeek, addDays, addWeeks, addMonths, format, addDays as addOneDay
 import type { DateRange, Session, Project } from '@/types';
 import type { ProjectFilter } from '@/project_filters';
 import { useSessions } from '@/hooks/useSessions';
+import { formatDurationInMinutes } from '@/lib/format';
 import { useProjects } from '@/hooks/useProjects';
 import Tooltip from './Tooltip';
 
@@ -242,13 +243,6 @@ export default function SessionsChart({ dateRange, projectFilter, verbose = fals
     }, 0);
   }, [sessionsPage?.items]);
 
-  // Format duration as hours and minutes
-  const formatDuration = (milliseconds: number) => {
-    const hours = Math.floor(milliseconds / (1000 * 60 * 60));
-    const minutes = Math.floor((milliseconds % (1000 * 60 * 60)) / (1000 * 60));
-    return `${hours}h ${minutes}m`;
-  };
-
   // Format segment label based on aggregation type
   const formatSegmentLabel = (segment: TimeSegment): string => {
     const start = segment.start;
@@ -263,26 +257,6 @@ export default function SessionsChart({ dateRange, projectFilter, verbose = fals
       case 'month':
         return format(start, 'MMMM');
     }
-  };
-
-  // Format duration in minutes to readable string
-  const formatDurationInMinutes = (minutes: number): string => {
-    if (minutes === 0) {
-      return '0';
-    }
-    
-    const hours = Math.floor(minutes / 60);
-    const remainingMinutes = minutes % 60;
-    
-    if (hours === 0) {
-      return `${remainingMinutes}m`;
-    }
-    
-    if (remainingMinutes === 0) {
-      return `${hours}h`;
-    }
-    
-    return `${hours}h ${remainingMinutes}m`;
   };
 
   // Calculate max total duration for proportional sizing
@@ -413,7 +387,7 @@ export default function SessionsChart({ dateRange, projectFilter, verbose = fals
                 </p>
                 <p>
                   <span className="font-medium">Total Duration:</span>{' '}
-                  {formatDuration(totalDuration)}
+                  {formatDurationInMinutes(Math.floor(totalDuration / (1000 * 60)))}
                 </p>
               </>
             )}
