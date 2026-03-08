@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import { startOfWeek, addDays, addWeeks, addMonths, format, addDays as addOneDay } from 'date-fns';
 import type { DateRange, Session, Project } from '@/lib/types';
 import type { ProjectFilter } from '@/lib/project_filters';
+import { projectSortIndex } from '@/lib/project_sorting';
 import { useSessions } from '@/hooks/useSessions';
 import { formatDurationInMinutes } from '@/lib/format';
 import { useProjects } from '@/hooks/useProjects';
@@ -168,6 +169,10 @@ function aggregateSessionsByProject(
       }
     }
     
+    aggregatedSessions.sort(
+      (a, b) => projectSortIndex(a.project.id) - projectSortIndex(b.project.id)
+    );
+
     return {
       timeSegment: segment.timeSegment,
       sessions: aggregatedSessions,
