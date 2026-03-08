@@ -33,7 +33,7 @@ import { useProjects } from '../hooks/useProjects';
 import { useSessions } from '../hooks/useSessions';
 import { formatDurationInMinutes } from '@/lib/format';
 import { API_URL } from '../config';
-import type { Session } from '../types';
+import type { Session } from '../lib/types';
 
 const PAGE_SIZE = 20;
 

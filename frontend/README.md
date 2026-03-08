@@ -92,5 +92,5 @@ For detailed deployment instructions, see the deployment plan documentation.
 - React 19
 - TypeScript
 - Vite
-- Material UI
+- shadcn/ui (Radix UI + Tailwind CSS)
 - React Router

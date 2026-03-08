@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { API_URL } from '../config';
-import type { Project } from '../types';
+import type { Project } from '../lib/types';
 
 export function useProjects() {
   const [projects, setProjects] = useState<Project[]>([]);

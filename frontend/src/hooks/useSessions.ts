@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { API_URL } from '../config';
-import type { PaginatedSessions } from '../types';
+import type { PaginatedSessions } from '../lib/types';
 
 interface UseSessionsParams {
   page: number;

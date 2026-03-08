@@ -13,7 +13,7 @@ import {
   SingleProjectFilter,
   HARDCODED_PROJECT_GROUP_FILTERS,
   type ProjectFilter,
-} from '@/project_filters';
+} from '@/lib/project_filters';
 
 interface ProjectFilterSelectProps {
   onChange: (filter: ProjectFilter) => void;

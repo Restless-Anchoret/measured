@@ -18,8 +18,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { IntervalKind, AggregationBy } from '@/types';
-import type { DateRange } from '@/types';
+import { IntervalKind, AggregationBy } from '@/lib/types';
+import type { DateRange } from '@/lib/types';
 
 interface DateIntervalChooserProps {
   onChange: (dateRange: DateRange) => void;

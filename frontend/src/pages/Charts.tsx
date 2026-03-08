@@ -2,8 +2,8 @@ import { useState } from 'react';
 import DateIntervalChooser from '@/components/DateIntervalChooser';
 import ProjectFilterSelect from '@/components/ProjectFilterSelect';
 import SessionsChart from '@/components/SessionsChart';
-import type { DateRange } from '@/types';
-import type { ProjectFilter } from '@/project_filters';
+import type { DateRange } from '@/lib/types';
+import type { ProjectFilter } from '@/lib/project_filters';
 
 export default function Charts() {
   const [selectedInterval, setSelectedInterval] = useState<DateRange | null>(null);
