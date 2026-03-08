@@ -93,6 +93,7 @@ export default function Sessions() {
         throw new Error('Failed to delete session');
       }
 
+      toast.success('Session deleted');
       setSessionToDelete(null);
       refetch();
     } catch {
