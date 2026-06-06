@@ -3,6 +3,12 @@ from datetime import datetime
 from typing import Optional
 
 
+class ProjectCreate(BaseModel):
+    name: str
+    color: str
+    extraColor: Optional[str] = None
+
+
 class ProjectBase(BaseModel):
     id: int
     name: str
