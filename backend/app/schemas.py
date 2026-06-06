@@ -1,6 +1,12 @@
 from pydantic import BaseModel, ConfigDict
 from datetime import datetime
 from typing import Optional
+from enum import Enum
+
+
+class ProjectSort(str, Enum):
+    DEFAULT = "DEFAULT"
+    MOST_RECENTLY_USED = "MOST_RECENTLY_USED"
 
 
 class ProjectCreate(BaseModel):
