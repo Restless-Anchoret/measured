@@ -2,7 +2,10 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
 import { toast } from 'sonner';
+import { format } from 'date-fns';
+import { CalendarIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { Calendar } from '@/components/ui/calendar';
 import {
   Form,
   FormControl,
@@ -12,6 +15,7 @@ import {
   FormMessage,
 } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import {
   Select,
   SelectContent,
@@ -19,6 +23,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { cn } from '@/lib/utils';
 import { API_URL } from '../config';
 import { useProjects } from '../hooks/useProjects';
 import { useEffect } from 'react';
@@ -30,6 +35,7 @@ const formSchema = z.object({
   duration: z.number({
     message: 'Please enter a duration',
   }).min(1, 'Duration must be at least 1 minute'),
+  date: z.date(),
 });
 
 type FormValues = z.infer<typeof formSchema>;
@@ -42,6 +48,7 @@ export default function LogSession() {
     defaultValues: {
       projectId: undefined,
       duration: undefined,
+      date: new Date(),
     },
   });
 
@@ -53,7 +60,21 @@ export default function LogSession() {
 
   const onSubmit = async (values: FormValues) => {
     const now = new Date();
-    const startTime = new Date(now.getTime() - values.duration * 60 * 1000);
+    const isToday =
+      values.date.getFullYear() === now.getFullYear() &&
+      values.date.getMonth() === now.getMonth() &&
+      values.date.getDate() === now.getDate();
+
+    let startTime: Date;
+    let endTime: Date;
+    if (isToday) {
+      endTime = now;
+      startTime = new Date(now.getTime() - values.duration * 60 * 1000);
+    } else {
+      startTime = new Date(values.date);
+      startTime.setHours(10, 0, 0, 0);
+      endTime = new Date(startTime.getTime() + values.duration * 60 * 1000);
+    }
 
     try {
       const response = await fetch(`${API_URL}/sessions`, {
@@ -64,7 +85,7 @@ export default function LogSession() {
         body: JSON.stringify({
           project_id: values.projectId,
           start_time: startTime.toISOString(),
-          end_time: now.toISOString(),
+          end_time: endTime.toISOString(),
         }),
       });
 
@@ -133,6 +154,37 @@ export default function LogSession() {
                   min={1}
                 />
               </FormControl>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
+
+        <FormField
+          control={form.control}
+          name="date"
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel>Date</FormLabel>
+              <Popover>
+                <PopoverTrigger asChild>
+                  <FormControl>
+                    <Button
+                      variant="outline"
+                      className={cn('w-full justify-start text-left font-normal')}
+                    >
+                      <CalendarIcon className="mr-2 h-4 w-4" />
+                      {format(field.value, 'PPP')}
+                    </Button>
+                  </FormControl>
+                </PopoverTrigger>
+                <PopoverContent className="w-auto p-0" align="start">
+                  <Calendar
+                    mode="single"
+                    selected={field.value}
+                    onSelect={(d) => d && field.onChange(d)}
+                  />
+                </PopoverContent>
+              </Popover>
               <FormMessage />
             </FormItem>
           )}
