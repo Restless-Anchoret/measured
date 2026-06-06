@@ -2,15 +2,17 @@ import { useState, useEffect } from 'react';
 import { API_URL } from '../config';
 import type { Project } from '../lib/types';
 
-export function useProjects() {
+type ProjectSort = 'DEFAULT' | 'MOST_RECENTLY_USED';
+
+export function useProjects(sort: ProjectSort = 'DEFAULT') {
   const [projects, setProjects] = useState<Project[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
 
   useEffect(() => {
     const controller = new AbortController();
-    
-    fetch(`${API_URL}/projects`, { signal: controller.signal })
+
+    fetch(`${API_URL}/projects?sort=${sort}`, { signal: controller.signal })
       .then((response) => response.json())
       .then((data) => {
         setProjects(data);

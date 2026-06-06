@@ -42,7 +42,7 @@ const formSchema = z.object({
 type FormValues = z.infer<typeof formSchema>;
 
 export default function LogSession() {
-  const { projects, loading: projectsLoading, error: projectsError } = useProjects();
+  const { projects, loading: projectsLoading, error: projectsError } = useProjects('MOST_RECENTLY_USED');
 
   const form = useForm<FormValues>({
     resolver: zodResolver(formSchema),
