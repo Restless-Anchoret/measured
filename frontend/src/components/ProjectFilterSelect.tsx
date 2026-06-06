@@ -14,25 +14,13 @@ import {
   HARDCODED_PROJECT_GROUP_FILTERS,
   type ProjectFilter,
 } from '@/lib/project_filters';
+import ColorDot from '@/components/ColorDot';
 
 interface ProjectFilterSelectProps {
   onChange: (filter: ProjectFilter) => void;
 }
 
 const ALL_FILTER = new AllProjectsFilter();
-
-function ColorDot({ color, extraColor }: { color: string; extraColor: string | null }) {
-  const background = extraColor
-    ? `linear-gradient(to right, ${color} 50%, ${extraColor} 50%)`
-    : color;
-
-  return (
-    <span
-      className="inline-block h-3 w-3 shrink-0 rounded-full"
-      style={{ background }}
-    />
-  );
-}
 
 function FilterItem({ filter }: { filter: ProjectFilter }) {
   return (

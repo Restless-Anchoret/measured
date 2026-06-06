@@ -24,6 +24,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { cn } from '@/lib/utils';
+import ColorDot from '@/components/ColorDot';
 import { API_URL } from '../config';
 import { useProjects } from '../hooks/useProjects';
 import { useEffect } from 'react';
@@ -125,7 +126,10 @@ export default function LogSession() {
                 <SelectContent>
                   {projects.map((project) => (
                     <SelectItem key={project.id} value={String(project.id)}>
-                      {project.name}
+                      <span className="flex items-center gap-2">
+                        <ColorDot color={project.color} extraColor={project.extraColor} />
+                        {project.name}
+                      </span>
                     </SelectItem>
                   ))}
                 </SelectContent>
