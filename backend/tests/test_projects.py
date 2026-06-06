@@ -144,8 +144,8 @@ async def test_get_projects_most_recently_used_sort(client: AsyncClient, test_db
 
 
 @pytest.mark.asyncio
-async def test_get_projects_most_recently_used_only_last_100_sessions(client: AsyncClient, test_db):
-    """Test that MOST_RECENTLY_USED only considers the 100 most recent sessions."""
+async def test_get_projects_most_recently_used_only_last_250_sessions(client: AsyncClient, test_db):
+    """Test that MOST_RECENTLY_USED only considers the 250 most recent sessions."""
     rows = await test_db.fetch_all("SELECT id FROM projects ORDER BY id")
     ids = [r["id"] for r in rows]
     p1, p2 = ids[0], ids[1]
@@ -153,8 +153,8 @@ async def test_get_projects_most_recently_used_only_last_100_sessions(client: As
     now = "2026-01-01 12:00:00"
     end = "2026-01-01 13:00:00"
 
-    # Insert 101 sessions for p1 (older) and 1 session for p2 (newest)
-    for _ in range(101):
+    # Insert 251 sessions for p1 (older) and 1 session for p2 (newest)
+    for _ in range(251):
         await test_db.execute(
             "INSERT INTO sessions (project_id, start_time, end_time, created_at) VALUES (:pid, :s, :e, :c)",
             {"pid": p1, "s": now, "e": end, "c": now},
@@ -168,7 +168,7 @@ async def test_get_projects_most_recently_used_only_last_100_sessions(client: As
     assert response.status_code == 200
     result_ids = [p["id"] for p in response.json()]
 
-    # The 100 most recent sessions: 1 for p2 + 99 for p1. p1 still leads (99 vs 1).
+    # The 250 most recent sessions: 1 for p2 + 249 for p1. p1 still leads (249 vs 1).
     assert result_ids[0] == p1
     assert result_ids[1] == p2
 

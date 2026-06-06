@@ -20,7 +20,7 @@ async def get_projects(
     if sort == ProjectSort.MOST_RECENTLY_USED:
         count_rows = await db.fetch_all(
             "SELECT project_id, COUNT(*) as session_count"
-            " FROM (SELECT project_id FROM sessions ORDER BY id DESC LIMIT 100)"
+            " FROM (SELECT project_id FROM sessions ORDER BY id DESC LIMIT 250)"
             " GROUP BY project_id"
         )
         session_counts = {row["project_id"]: row["session_count"] for row in count_rows}
