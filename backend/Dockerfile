@@ -39,9 +39,6 @@ ENV PATH=/root/.local/bin:$PATH
 # Create directory for database (will be mounted as volume in production)
 RUN mkdir -p /data
 
-# Set environment variable for production database path
-ENV DATABASE_URL=sqlite:////data/measured.db
-
 # Expose port 8080 (Fly.io default)
 EXPOSE 8080
 
