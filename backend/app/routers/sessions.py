@@ -33,8 +33,8 @@ async def create_session(
         """,
         {
             "project_id": session.project_id,
-            "start_time": session.start_time,
-            "end_time": session.end_time
+            "start_time": session.start_time.isoformat(),
+            "end_time": session.end_time.isoformat() if session.end_time else None
         }
     )
     
@@ -61,11 +61,11 @@ async def get_sessions(
     
     if min_start_time:
         where_clauses.append("start_time >= :min_start_time")
-        filter_params["min_start_time"] = min_start_time
+        filter_params["min_start_time"] = min_start_time.isoformat()
     
     if max_start_time:
         where_clauses.append("start_time < :max_start_time")
-        filter_params["max_start_time"] = max_start_time
+        filter_params["max_start_time"] = max_start_time.isoformat()
     
     if project_id:
         # Build IN clause for multiple project IDs
@@ -138,8 +138,8 @@ async def update_session(
         WHERE id = :session_id
         """,
         {
-            "start_time": session_update.start_time,
-            "end_time": session_update.end_time,
+            "start_time": session_update.start_time.isoformat(),
+            "end_time": session_update.end_time.isoformat(),
             "session_id": session_id
         }
     )

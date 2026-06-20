@@ -18,26 +18,29 @@ async def get_db() -> AsyncGenerator[databases.Database, None]:
 
 async def init_db(db: databases.Database | None = None):
     """Initialize database tables.
-
+    
     Args:
         db: Optional database instance. If not provided, uses the global database instance.
     """
     target_db = db if db is not None else database
-    is_sqlite = str(target_db.url).startswith("sqlite")
-    pk = "INTEGER PRIMARY KEY" if is_sqlite else "INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY"
-
-    await target_db.execute(f"""
+    
+    # Create projects table
+    await target_db.execute("""
         CREATE TABLE IF NOT EXISTS projects (
-            id {pk},
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
             name TEXT NOT NULL UNIQUE,
             color VARCHAR(7) NOT NULL,
             extra_color VARCHAR(7)
         )
     """)
-
-    await target_db.execute(f"""
+    
+    # Create sessions table
+    # Using TIMESTAMP for cross-database compatibility
+    # SQLite stores as TEXT but accepts TIMESTAMP type
+    # PostgreSQL and MySQL use native TIMESTAMP/DATETIME types
+    await target_db.execute("""
         CREATE TABLE IF NOT EXISTS sessions (
-            id {pk},
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
             project_id INTEGER NOT NULL,
             start_time TIMESTAMP NOT NULL,
             end_time TIMESTAMP,

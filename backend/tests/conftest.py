@@ -51,7 +51,7 @@ async def seed_test_projects(db: databases.Database):
     ]
     for project in test_projects:
         await db.execute(
-            "INSERT INTO projects (name, color, extra_color) VALUES (:name, :color, :extra_color)",
+            "INSERT OR IGNORE INTO projects (name, color, extra_color) VALUES (:name, :color, :extra_color)",
             {"name": project["name"], "color": project["color"], "extra_color": project["extra_color"]}
         )
 

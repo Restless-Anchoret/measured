@@ -36,17 +36,10 @@ class Session:
     @classmethod
     def from_row(cls, row) -> "Session":
         """Create Session from database row"""
-        def _to_dt(val):
-            if val is None:
-                return None
-            if isinstance(val, datetime):
-                return val
-            return datetime.fromisoformat(val)
-
         return cls(
             id=row["id"],
             project_id=row["project_id"],
-            start_time=_to_dt(row["start_time"]),
-            end_time=_to_dt(row["end_time"]),
-            created_at=_to_dt(row["created_at"])
+            start_time=datetime.fromisoformat(row["start_time"]),
+            end_time=datetime.fromisoformat(row["end_time"]) if row["end_time"] else None,
+            created_at=datetime.fromisoformat(row["created_at"])
         )
