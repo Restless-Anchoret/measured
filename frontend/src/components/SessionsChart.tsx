@@ -203,7 +203,7 @@ export default function SessionsChart({ dateRange, projectFilter, verbose = fals
 
   const { sessionsPage, loading, error } = useSessions({
     page: 1,
-    pageSize: 1000,
+    pageSize: 5000,
     minStartTime: dateRange.fromDate,
     maxStartTime: dateRange.toDate,
     projectIds: filterProjectIds,
