@@ -95,6 +95,6 @@ export class AllProjectsFilter implements ProjectFilter {
 // TODO: move group definitions to the backend
 export const HARDCODED_PROJECT_GROUP_FILTERS: ProjectsGroupFilter[] = [
   new ProjectsGroupFilter([9, 10, 11], 'Reading', '#068a19', null),
-  new ProjectsGroupFilter([3, 4, 15], 'Sport', '#f59120', null),
+  new ProjectsGroupFilter([3, 4, 15, 20], 'Sport', '#f59120', null),
   new ProjectsGroupFilter([1, 2, 5, 6], 'Rest', '#8a07db', '#f52020'),
 ];
