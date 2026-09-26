@@ -10,7 +10,6 @@ export interface Session {
   project_id: number;
   start_time: string; // ISO datetime string
   end_time: string | null; // ISO datetime string or null
-  created_at: string; // ISO datetime string
 }
 
 export interface PaginatedSessions {
