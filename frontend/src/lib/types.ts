@@ -8,8 +8,8 @@ export interface Project {
 export interface Session {
   id: number;
   project_id: number;
-  start_time: string; // ISO datetime string
-  end_time: string | null; // ISO datetime string or null
+  date: string; // ISO date string (YYYY-MM-DD)
+  duration_minutes: number;
 }
 
 export interface PaginatedSessions {

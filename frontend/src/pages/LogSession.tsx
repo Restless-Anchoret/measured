@@ -60,23 +60,6 @@ export default function LogSession() {
   }, [projectsError]);
 
   const onSubmit = async (values: FormValues) => {
-    const now = new Date();
-    const isToday =
-      values.date.getFullYear() === now.getFullYear() &&
-      values.date.getMonth() === now.getMonth() &&
-      values.date.getDate() === now.getDate();
-
-    let startTime: Date;
-    let endTime: Date;
-    if (isToday) {
-      endTime = now;
-      startTime = new Date(now.getTime() - values.duration * 60 * 1000);
-    } else {
-      startTime = new Date(values.date);
-      startTime.setHours(10, 0, 0, 0);
-      endTime = new Date(startTime.getTime() + values.duration * 60 * 1000);
-    }
-
     try {
       const response = await fetch(`${API_URL}/sessions`, {
         method: 'POST',
@@ -85,8 +68,8 @@ export default function LogSession() {
         },
         body: JSON.stringify({
           project_id: values.projectId,
-          start_time: startTime.toISOString(),
-          end_time: endTime.toISOString(),
+          date: format(values.date, 'yyyy-MM-dd'),
+          duration_minutes: values.duration,
         }),
       });
 

@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { startOfWeek, addDays, addWeeks, addMonths, format, addDays as addOneDay } from 'date-fns';
+import { startOfWeek, addDays, addWeeks, addMonths, format, parseISO, addDays as addOneDay } from 'date-fns';
 import type { DateRange, Session, Project } from '@/lib/types';
 import type { ProjectFilter } from '@/lib/project_filters';
 import { projectSortIndex } from '@/lib/project_sorting';
@@ -14,13 +14,6 @@ interface SessionsChartProps {
   verbose?: boolean;
 }
 
-interface CompletedSession {
-  id: number;
-  projectId: number;
-  startTime: Date;
-  durationInMinutes: number;
-}
-
 interface TimeSegment {
   start: Date;
   end: Date;
@@ -28,7 +21,7 @@ interface TimeSegment {
 
 interface SessionsTimeSegment {
   timeSegment: TimeSegment;
-  sessions: CompletedSession[];
+  sessions: Session[];
 }
 
 interface AggregatedSession {
@@ -80,44 +73,27 @@ function buildTimeSegments(dateRange: DateRange): TimeSegment[] {
   return segments;
 }
 
-function convertToCompletedSessions(sessions: Session[]): CompletedSession[] {
-  return sessions
-    .filter(session => session.end_time !== null)
-    .map(session => {
-      const startTime = new Date(session.start_time).getTime();
-      const endTime = new Date(session.end_time!).getTime();
-      const durationInMinutes = Math.floor((endTime - startTime) / (1000 * 60));
-      
-      return {
-        id: session.id,
-        projectId: session.project_id,
-        startTime: new Date(session.start_time),
-        durationInMinutes: durationInMinutes,
-      };
-    });
-}
-
 function groupSessionsIntoTimeSegments(
   timeSegments: TimeSegment[],
-  completedSessions: CompletedSession[]
+  sessions: Session[]
 ): SessionsTimeSegment[] {
   const result: SessionsTimeSegment[] = [];
-  
+
   // Counter for time segments (forward)
   let segmentIndex = 0;
-  
-  // Counter for completed sessions (backward)
-  let sessionIndex = completedSessions.length - 1;
-  
+
+  // Counter for sessions (backward)
+  let sessionIndex = sessions.length - 1;
+
   while (segmentIndex < timeSegments.length) {
     const segment = timeSegments[segmentIndex];
-    const sessionsInSegment: CompletedSession[] = [];
-    
+    const sessionsInSegment: Session[] = [];
+
     // Collect all sessions that fall within this segment
     // Sessions are processed from end to start
     while (sessionIndex >= 0) {
-      const session = completedSessions[sessionIndex];
-      const sessionStartTime = session.startTime.getTime();
+      const session = sessions[sessionIndex];
+      const sessionStartTime = parseISO(session.date).getTime();
       const segmentStartTime = segment.start.getTime();
       const segmentEndTime = segment.end.getTime();
 
@@ -149,8 +125,8 @@ function aggregateSessionsByProject(
     const sessionsByProjectId = new Map<number, number>();
     
     for (const session of segment.sessions) {
-      const currentDuration = sessionsByProjectId.get(session.projectId) || 0;
-      sessionsByProjectId.set(session.projectId, currentDuration + session.durationInMinutes);
+      const currentDuration = sessionsByProjectId.get(session.project_id) || 0;
+      sessionsByProjectId.set(session.project_id, currentDuration + session.duration_minutes);
     }
     
     // Create aggregated sessions
@@ -204,8 +180,8 @@ export default function SessionsChart({ dateRange, projectFilter, verbose = fals
   const { sessionsPage, loading, error } = useSessions({
     page: 1,
     pageSize: 5000,
-    minStartTime: dateRange.fromDate,
-    maxStartTime: dateRange.toDate,
+    minDate: format(dateRange.fromDate, 'yyyy-MM-dd'),
+    maxDate: format(dateRange.toDate, 'yyyy-MM-dd'),
     projectIds: filterProjectIds,
   });
 
@@ -217,16 +193,10 @@ export default function SessionsChart({ dateRange, projectFilter, verbose = fals
     [dateRange]
   );
 
-  // Calculate list of completed sessions (sessions with end_time defined)
-  const completedSessions = useMemo<CompletedSession[]>(
-    () => sessionsPage?.items ? convertToCompletedSessions(sessionsPage.items) : [],
-    [sessionsPage?.items]
-  );
-
   // Group sessions into time segments
   const sessionsTimeSegments = useMemo<SessionsTimeSegment[]>(
-    () => groupSessionsIntoTimeSegments(timeSegments, completedSessions),
-    [timeSegments, completedSessions]
+    () => groupSessionsIntoTimeSegments(timeSegments, sessionsPage?.items ?? []),
+    [timeSegments, sessionsPage?.items]
   );
 
   // Aggregate sessions by project
@@ -235,17 +205,11 @@ export default function SessionsChart({ dateRange, projectFilter, verbose = fals
     [sessionsTimeSegments, projects]
   );
 
-  // Calculate total duration in milliseconds
-  const totalDuration = useMemo(() => {
+  // Calculate total duration in minutes
+  const totalDurationInMinutes = useMemo(() => {
     if (!sessionsPage?.items) return 0;
-    
-    return sessionsPage.items.reduce((total, session) => {
-      if (!session.end_time) return total;
-      
-      const startTime = new Date(session.start_time).getTime();
-      const endTime = new Date(session.end_time).getTime();
-      return total + (endTime - startTime);
-    }, 0);
+
+    return sessionsPage.items.reduce((total, session) => total + session.duration_minutes, 0);
   }, [sessionsPage?.items]);
 
   // Format segment label based on aggregation type
@@ -392,7 +356,7 @@ export default function SessionsChart({ dateRange, projectFilter, verbose = fals
                 </p>
                 <p>
                   <span className="font-medium">Total Duration:</span>{' '}
-                  {formatDurationInMinutes(Math.floor(totalDuration / (1000 * 60)))}
+                  {formatDurationInMinutes(totalDurationInMinutes)}
                 </p>
               </>
             )}

@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { toast } from 'sonner';
-import { format } from 'date-fns';
+import { format, parseISO } from 'date-fns';
 import { MoreVertical, Trash2 } from 'lucide-react';
 import {
   Table,
@@ -65,19 +65,8 @@ export default function Sessions() {
     return project?.name || 'Unknown';
   };
 
-  const formatDuration = (startTime: string, endTime: string | null): string => {
-    if (!endTime) {
-      return 'Ongoing';
-    }
-    const start = new Date(startTime);
-    const end = new Date(endTime);
-    const diffMs = end.getTime() - start.getTime();
-    const diffMinutes = Math.floor(diffMs / (1000 * 60));
-    return formatDurationInMinutes(diffMinutes);
-  };
-
-  const formatStartDate = (startTime: string): string => {
-    return format(new Date(startTime), 'dd.MM.yyyy');
+  const formatStartDate = (date: string): string => {
+    return format(parseISO(date), 'dd.MM.yyyy');
   };
 
   const handleDelete = async () => {
@@ -131,8 +120,8 @@ export default function Sessions() {
             {sessions.map((session) => (
               <TableRow key={session.id}>
                 <TableCell>{getProjectName(session.project_id)}</TableCell>
-                <TableCell>{formatDuration(session.start_time, session.end_time)}</TableCell>
-                <TableCell>{formatStartDate(session.start_time)}</TableCell>
+                <TableCell>{formatDurationInMinutes(session.duration_minutes)}</TableCell>
+                <TableCell>{formatStartDate(session.date)}</TableCell>
                 <TableCell>
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild>
@@ -172,8 +161,8 @@ export default function Sessions() {
               {sessionToDelete && (
                 <>
                   {getProjectName(sessionToDelete.project_id)} &mdash;{' '}
-                  {formatStartDate(sessionToDelete.start_time)},{' '}
-                  {formatDuration(sessionToDelete.start_time, sessionToDelete.end_time)}
+                  {formatStartDate(sessionToDelete.date)},{' '}
+                  {formatDurationInMinutes(sessionToDelete.duration_minutes)}
                 </>
               )}
             </AlertDialogDescription>

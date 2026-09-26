@@ -5,12 +5,12 @@ import type { PaginatedSessions } from '../lib/types';
 interface UseSessionsParams {
   page: number;
   pageSize: number;
-  minStartTime?: Date;
-  maxStartTime?: Date;
+  minDate?: string;
+  maxDate?: string;
   projectIds?: number[];
 }
 
-export function useSessions({ page, pageSize, minStartTime, maxStartTime, projectIds }: UseSessionsParams) {
+export function useSessions({ page, pageSize, minDate, maxDate, projectIds }: UseSessionsParams) {
   const [sessionsPage, setSessionsPage] = useState<PaginatedSessions | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
@@ -30,12 +30,12 @@ export function useSessions({ page, pageSize, minStartTime, maxStartTime, projec
       page_size: pageSize.toString(),
     });
     
-    if (minStartTime) {
-      params.append('min_start_time', minStartTime.toISOString());
+    if (minDate) {
+      params.append('min_date', minDate);
     }
-    
-    if (maxStartTime) {
-      params.append('max_start_time', maxStartTime.toISOString());
+
+    if (maxDate) {
+      params.append('max_date', maxDate);
     }
     
     if (projectIds && projectIds.length > 0) {
@@ -59,7 +59,7 @@ export function useSessions({ page, pageSize, minStartTime, maxStartTime, projec
     
     return () => controller.abort();
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [page, pageSize, minStartTime, maxStartTime, projectIdsKey, refreshKey]);
+  }, [page, pageSize, minDate, maxDate, projectIdsKey, refreshKey]);
 
   const refetch = useCallback(() => {
     setRefreshKey((k) => k + 1);
