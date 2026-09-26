@@ -4,7 +4,7 @@ from app.database import get_db
 from app.models import Session
 from app.schemas import Session as SessionSchema, SessionCreate, SessionUpdate, PaginatedSessions
 from typing import Annotated, Optional
-from datetime import datetime, timezone, timedelta
+from datetime import date, datetime, timezone, timedelta
 from zoneinfo import ZoneInfo
 
 router = APIRouter()
@@ -26,11 +26,19 @@ async def create_session(
     if not project_row:
         raise HTTPException(status_code=404, detail="Project not found")
 
-    date = session.start_time.astimezone(AMSTERDAM_TZ).date().isoformat()
-    duration_minutes = (
-        int((session.end_time - session.start_time).total_seconds() / 60)
-        if session.end_time else None
-    )
+    if session.date is not None and session.duration_minutes is not None:
+        date = session.date.isoformat()
+        duration_minutes = session.duration_minutes
+        start_time_value = None
+        end_time_value = None
+    else:
+        date = session.start_time.astimezone(AMSTERDAM_TZ).date().isoformat()
+        duration_minutes = (
+            int((session.end_time - session.start_time).total_seconds() / 60)
+            if session.end_time else None
+        )
+        start_time_value = session.start_time.isoformat()
+        end_time_value = session.end_time.isoformat()
 
     now = datetime.now(timezone.utc)
     create_time = (now - datetime(1970, 1, 1, tzinfo=timezone.utc)) // timedelta(milliseconds=1)
@@ -44,8 +52,8 @@ async def create_session(
         """,
         {
             "project_id": session.project_id,
-            "start_time": session.start_time.isoformat(),
-            "end_time": session.end_time.isoformat() if session.end_time else None,
+            "start_time": start_time_value,
+            "end_time": end_time_value,
             "created_at": now.isoformat(),
             "date": date,
             "duration_minutes": duration_minutes,
@@ -65,23 +73,33 @@ async def get_sessions(
     page_size: int = Query(20, ge=1, le=5000),
     min_start_time: Optional[datetime] = Query(None, description="Minimum start time (inclusive) as UTC timestamp"),
     max_start_time: Optional[datetime] = Query(None, description="Maximum start time (exclusive) as UTC timestamp"),
+    min_date: Optional[date] = Query(None, description="Minimum date (inclusive)"),
+    max_date: Optional[date] = Query(None, description="Maximum date (exclusive)"),
     project_id: Optional[list[int]] = Query(None, description="Filter by one or more project IDs")
 ):
     """Get paginated list of sessions"""
     offset = (page - 1) * page_size
-    
+
     # Build WHERE clause and params
     where_clauses = []
     filter_params = {}
-    
+
     if min_start_time:
         where_clauses.append("start_time >= :min_start_time")
         filter_params["min_start_time"] = min_start_time.isoformat()
-    
+
     if max_start_time:
         where_clauses.append("start_time < :max_start_time")
         filter_params["max_start_time"] = max_start_time.isoformat()
-    
+
+    if min_date:
+        where_clauses.append("date >= :min_date")
+        filter_params["min_date"] = min_date.isoformat()
+
+    if max_date:
+        where_clauses.append("date < :max_date")
+        filter_params["max_date"] = max_date.isoformat()
+
     if project_id:
         # Build IN clause for multiple project IDs
         placeholders = ",".join([f":project_id_{i}" for i in range(len(project_id))])
@@ -100,7 +118,7 @@ async def get_sessions(
     data_query = f"""
         SELECT * FROM sessions
         {where_sql}
-        ORDER BY start_time DESC
+        ORDER BY date DESC, id DESC
         LIMIT :page_size OFFSET :offset
     """
     data_params = {**filter_params, "page_size": page_size, "offset": offset}
@@ -145,8 +163,16 @@ async def update_session(
     if not row:
         raise HTTPException(status_code=404, detail="Session not found")
 
-    date = session_update.start_time.astimezone(AMSTERDAM_TZ).date().isoformat()
-    duration_minutes = int((session_update.end_time - session_update.start_time).total_seconds() / 60)
+    if session_update.date is not None and session_update.duration_minutes is not None:
+        date = session_update.date.isoformat()
+        duration_minutes = session_update.duration_minutes
+        start_time_value = None
+        end_time_value = None
+    else:
+        date = session_update.start_time.astimezone(AMSTERDAM_TZ).date().isoformat()
+        duration_minutes = int((session_update.end_time - session_update.start_time).total_seconds() / 60)
+        start_time_value = session_update.start_time.isoformat()
+        end_time_value = session_update.end_time.isoformat()
 
     # Update session
     await db.execute(
@@ -156,8 +182,8 @@ async def update_session(
         WHERE id = :session_id
         """,
         {
-            "start_time": session_update.start_time.isoformat(),
-            "end_time": session_update.end_time.isoformat(),
+            "start_time": start_time_value,
+            "end_time": end_time_value,
             "date": date,
             "duration_minutes": duration_minutes,
             "session_id": session_id

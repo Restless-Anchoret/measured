@@ -79,37 +79,67 @@ async def test_create_session(client: AsyncClient):
 
 
 @pytest.mark.asyncio
-async def test_create_session_without_end_time(client: AsyncClient):
-    """Test creating a session without end_time."""
+async def test_create_session_missing_end_time(client: AsyncClient):
+    """Test creating a session with start_time but no end_time returns 400."""
     project_id = await get_first_project_id(client)
-    
+
     start_time = datetime.now()
     session_data = {
         "project_id": project_id,
         "start_time": start_time.isoformat()
     }
-    
+
     response = await client.post("/api/sessions", json=session_data)
-    
+
+    assert response.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_create_session_new_style(client: AsyncClient):
+    """Test creating a session with date/duration_minutes instead of start_time/end_time."""
+    project_id = await get_first_project_id(client)
+
+    session_data = {
+        "project_id": project_id,
+        "date": "2026-06-15",
+        "duration_minutes": 45,
+    }
+
+    response = await client.post("/api/sessions", json=session_data)
+
     assert response.status_code == 201
     session = response.json()
-    
+
     assert session["project_id"] == project_id
-    assert session["start_time"] is not None
+    assert session["date"] == "2026-06-15"
+    assert session["duration_minutes"] == 45
+    assert session["start_time"] is None
     assert session["end_time"] is None
-    assert session["date"] is not None
-    assert session["duration_minutes"] is None
+
+
+@pytest.mark.asyncio
+async def test_create_session_missing_fields(client: AsyncClient):
+    """Test creating a session with neither old nor new fields returns 400."""
+    project_id = await get_first_project_id(client)
+
+    session_data = {"project_id": project_id}
+
+    response = await client.post("/api/sessions", json=session_data)
+
+    assert response.status_code == 400
 
 
 @pytest.mark.asyncio
 async def test_create_session_invalid_project(client: AsyncClient):
     """Test creating a session with non-existent project ID."""
     start_time = datetime.now()
+    end_time = datetime.now()
     session_data = {
         "project_id": 99999,  # Non-existent project
-        "start_time": start_time.isoformat()
+        "start_time": start_time.isoformat(),
+        "end_time": end_time.isoformat()
     }
-    
+
     response = await client.post("/api/sessions", json=session_data)
     
     assert response.status_code == 404
@@ -168,12 +198,12 @@ async def test_get_sessions_paginated(client: AsyncClient):
     assert len(data["items"]) == 1
     assert data["page"] == 3
     
-    # Verify sessions are ordered by start_time DESC (most recent first)
+    # Verify sessions are ordered by date DESC, id DESC (most recent first)
     all_sessions_response = await client.get("/api/sessions?page=1&page_size=1000")
     all_sessions = all_sessions_response.json()["items"]
-    start_times = [s["start_time"] for s in all_sessions]
+    sort_keys = [(s["date"], s["id"]) for s in all_sessions]
     # Should be in descending order
-    assert start_times == sorted(start_times, reverse=True)
+    assert sort_keys == sorted(sort_keys, reverse=True)
 
 
 @pytest.mark.asyncio
@@ -259,6 +289,43 @@ async def test_update_session(client: AsyncClient):
     # date/duration_minutes should reflect the new start_time/end_time
     assert updated_session["duration_minutes"] == 180
     assert updated_session["date"] is not None
+
+
+@pytest.mark.asyncio
+async def test_update_session_new_style(client: AsyncClient):
+    """Test updating a session with date/duration_minutes clears the old fields."""
+    project_id = await get_first_project_id(client)
+
+    start_time = datetime.now() - timedelta(hours=3)
+    end_time = datetime.now() - timedelta(hours=2)
+    created_session = await create_session(client, project_id, start_time, end_time)
+    session_id = created_session["id"]
+
+    update_data = {"date": "2026-06-15", "duration_minutes": 45}
+    response = await client.put(f"/api/sessions/{session_id}", json=update_data)
+
+    assert response.status_code == 200
+    updated_session = response.json()
+
+    assert updated_session["date"] == "2026-06-15"
+    assert updated_session["duration_minutes"] == 45
+    assert updated_session["start_time"] is None
+    assert updated_session["end_time"] is None
+
+
+@pytest.mark.asyncio
+async def test_update_session_missing_fields(client: AsyncClient):
+    """Test updating a session with neither old nor new fields returns 400."""
+    project_id = await get_first_project_id(client)
+
+    start_time = datetime.now() - timedelta(hours=3)
+    end_time = datetime.now() - timedelta(hours=2)
+    created_session = await create_session(client, project_id, start_time, end_time)
+    session_id = created_session["id"]
+
+    response = await client.put(f"/api/sessions/{session_id}", json={})
+
+    assert response.status_code == 400
 
 
 @pytest.mark.asyncio

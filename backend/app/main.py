@@ -1,5 +1,6 @@
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
+from fastapi.encoders import jsonable_encoder
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
@@ -25,7 +26,7 @@ app = FastAPI(title="Measured API", version="1.0.0", lifespan=lifespan)
 async def validation_exception_handler(request, exc: RequestValidationError):
     return JSONResponse(
         status_code=400,
-        content={"detail": exc.errors()}
+        content=jsonable_encoder({"detail": exc.errors()})
     )
 
 
