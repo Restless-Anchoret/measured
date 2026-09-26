@@ -6,15 +6,14 @@ Migrate the `sessions` table:
 - `start_time TIMESTAMP` + `end_time TIMESTAMP` → `date TEXT` (YYYY-MM-DD) + `duration_minutes INTEGER`. Precision loss is acceptable.
 - `created_at TIMESTAMP` → `create_time BIGINT` (milliseconds since 1970-01-01 UTC epoch). `created_at` is currently written via SQLite's `CURRENT_TIMESTAMP`, which produces a naive `YYYY-MM-DD HH:MM:SS` string — always UTC in practice, but with no timezone marker, and inconsistent historically with a handful of offset-aware rows written by other code paths. An epoch-millisecond integer has no naive/aware distinction to get wrong and sorts/compares correctly as a plain integer.
 
-**API strategy**: no real API versioning is introduced — this is a deliberately messy two-hop routing dance, acceptable because this is a single-use project:
+**API strategy**: no new endpoints and no versioning — the existing `POST`/`PUT /api/sessions` handlers are extended in place to accept *either* the old fields (`start_time`/`end_time`) or the new ones (`date`/`duration_minutes`) in the same request body, enforced by a Pydantic cross-field validator. The router branches on whichever pair was actually sent. Frontend migrates by changing what it sends to the same URLs (Step 5) — no second cutover, no temporary routes to clean up later.
 
-1. The existing `POST`/`PUT /api/sessions` handlers keep their current request contract (`start_time`/`end_time`), but are corrected to also derive and write the new columns internally (Step 2).
-2. A **temporary** pair of new-fields-only endpoints is added at `POST`/`PUT /api/v1/sessions-temp` (Step 4). Frontend migrates its writes there (Step 5).
-3. The old `/api/sessions` write handlers and old columns are then retired (Steps 6–7).
-4. Later, the *same* logic is additionally exposed at its real intended home, `POST`/`PUT /api/v1/sessions`, alongside the still-live `sessions-temp` routes (Step 8). Frontend migrates a second time, from `sessions-temp` to the new `/api/v1/sessions`.
-5. `sessions-temp` is then deleted entirely (Step 9), since nothing calls it anymore.
+1. The existing `POST`/`PUT /api/sessions` handlers keep accepting `start_time`/`end_time` and derive/write the new columns internally (Step 2 — already done).
+2. The same handlers are extended to *also* accept `date`/`duration_minutes` directly, skipping the old fields entirely when present (Step 4).
+3. Frontend switches to sending `date`/`duration_minutes` to the same endpoints (Step 5).
+4. Once frontend no longer sends the old fields, `start_time`/`end_time` support is dropped from the request/response contract (Step 6), then the columns themselves are dropped from the DB (Step 7).
 
-`GET`/`DELETE` are unaffected by any of this — they stay at the plain `/api/sessions` / `/api/sessions/{id}` paths throughout, since read filtering can support old and new query params on the same handler with no contract conflict, and delete-by-id doesn't care which endpoint created the row.
+`GET`/`DELETE` are unaffected by any of this — they stay at the plain `/api/sessions` / `/api/sessions/{id}` paths throughout, since read filtering can support old and new query params on the same handler with no contract conflict, and delete-by-id doesn't care which fields a row has.
 
 `create_time` is server-generated only, on every write path — it's never part of any request body.
 
@@ -146,38 +145,70 @@ Verify:
 
 ---
 
-## Step 4 — New backend: temporary new-fields-only endpoints at `/api/v1/sessions-temp`
+## Step 4 — Backend: accept `date`/`duration_minutes` directly on the existing endpoints
 
-- New file `backend/app/routers/sessions_temp.py`, mounted in `main.py`:
+- `backend/app/schemas.py`:
   ```python
-  app.include_router(sessions_temp.router, prefix="/api/v1", tags=["sessions-temp"])
-  ```
-  with routes defined as `@router.post("/sessions-temp")` and `@router.put("/sessions-temp/{session_id}")`, giving final paths `POST /api/v1/sessions-temp` and `PUT /api/v1/sessions-temp/{id}`.
-- New schemas in `schemas.py` (deliberately not "v2"-named, since these get reused as-is at the final path in Step 8):
-  ```python
-  class SessionCreateNew(BaseModel):
+  from pydantic import BaseModel, ConfigDict, model_validator
+
+  class SessionCreate(BaseModel):
       project_id: int
-      date: date
-      duration_minutes: int
+      start_time: Optional[datetime] = None
+      end_time: Optional[datetime] = None
+      date: Optional[date_type] = None
+      duration_minutes: Optional[int] = None
 
-  class SessionUpdateNew(BaseModel):
-      date: date
-      duration_minutes: int
+      @model_validator(mode="after")
+      def check_fields(self):
+          has_new = self.date is not None and self.duration_minutes is not None
+          has_old = self.start_time is not None
+          if not has_new and not has_old:
+              raise ValueError("Provide either (date and duration_minutes) or start_time")
+          return self
+
+  class SessionUpdate(BaseModel):
+      start_time: Optional[datetime] = None
+      end_time: Optional[datetime] = None
+      date: Optional[date_type] = None
+      duration_minutes: Optional[int] = None
+
+      @model_validator(mode="after")
+      def check_fields(self):
+          has_new = self.date is not None and self.duration_minutes is not None
+          has_old = self.start_time is not None and self.end_time is not None
+          if not has_new and not has_old:
+              raise ValueError("Provide either (date and duration_minutes) or (start_time and end_time)")
+          return self
   ```
-  Both fields required on each (full-replace semantics on update, matching the existing endpoint's current behavior) — no `start_time`/`end_time` anywhere in this contract, no fallback logic.
-- `POST /api/v1/sessions-temp`: verify project exists (same check as the existing handler); INSERT only `project_id, date, duration_minutes, create_time` — `start_time`/`end_time`/`created_at` left `NULL` (possible now that Step 1 relaxed those constraints). Returns the shared `Session` response schema.
-- `PUT /api/v1/sessions-temp/{id}`: UPDATE `date`, `duration_minutes` only.
-- `GET /api/sessions` (unversioned, shared, line ~47): add `min_date: Optional[str]` / `max_date: Optional[str]` query params alongside existing `min_start_time`/`max_start_time` — both param sets coexist with no conflict, since this is read-only filtering. Change `ORDER BY start_time DESC` → `ORDER BY date DESC, id DESC` (safe post-Step-3, every row has `date`).
-- `GET /api/sessions/{id}` and `DELETE /api/sessions/{id}`: unchanged, and stay unchanged for the rest of this plan.
-- `backend/tests/test_sessions.py`: new section for `sessions-temp` — assert `POST` leaves `start_time`/`end_time`/`created_at` `null` in the response and sets `date`/`duration_minutes`/`create_time` correctly.
+  `SessionBase` goes away — `SessionCreate` no longer needs to inherit a required `start_time`. A `model_validator` raising `ValueError` goes through the same Pydantic → `RequestValidationError` path as any other field error, so `main.py`'s existing custom handler already turns this into a 400 with no new code.
+- `backend/app/routers/sessions.py:create_session`: branch on which pair was supplied:
+  ```python
+  if session.date is not None and session.duration_minutes is not None:
+      date = session.date.isoformat()
+      duration_minutes = session.duration_minutes
+      start_time_value = None
+      end_time_value = None
+  else:
+      date = session.start_time.astimezone(AMSTERDAM_TZ).date().isoformat()
+      duration_minutes = (
+          int((session.end_time - session.start_time).total_seconds() / 60)
+          if session.end_time else None
+      )
+      start_time_value = session.start_time.isoformat()
+      end_time_value = session.end_time.isoformat() if session.end_time else None
+  ```
+  INSERT uses `start_time_value`/`end_time_value` in place of `session.start_time.isoformat()` directly, since `session.start_time` may now be `None`.
+- `update_session`: same branching. On the new-style path, `start_time`/`end_time` are explicitly set to `NULL` in the `UPDATE` too — switching a row over to date-based input clears out the now-stale legacy timestamp rather than leaving a contradictory leftover value next to the new `date`.
+- `GET /api/sessions` (line ~47): add `min_date: Optional[str]` / `max_date: Optional[str]` query params alongside existing `min_start_time`/`max_start_time` — both param sets coexist with no conflict, since this is read-only filtering. Change `ORDER BY start_time DESC` → `ORDER BY date DESC, id DESC` (safe post-Step-3, every row has `date`).
+- `backend/tests/test_sessions.py`: add tests for the new-style `POST`/`PUT` (only `date`/`duration_minutes` sent, `start_time`/`end_time` come back `null`), and a test asserting a request with neither old nor new fields gets a 400.
 
 ---
 
-## Step 5 — Frontend: migrate writes to `/api/v1/sessions-temp`
+## Step 5 — Frontend: send `date`/`duration_minutes` to the same endpoints
 
-- `frontend/src/lib/types.ts`: `Session` type — `start_time`, `end_time`, `created_at` become optional/nullable; add `date: string`, `duration_minutes: number`, `create_time: string` (ISO-8601 datetime string).
-- `frontend/src/pages/LogSession.tsx` (line ~81): POST to `/api/v1/sessions-temp` with `{ project_id, date: format(values.date, 'yyyy-MM-dd'), duration_minutes: values.duration }` — remove timestamp computation (lines ~63–78).
-- Session edit flow in `frontend/src/pages/Sessions.tsx`: switch its `PUT` call to `/api/v1/sessions-temp/{id}` with `{ date, duration_minutes }`.
+- `frontend/src/lib/types.ts`: `Session` type — `start_time`/`end_time` become optional/nullable; add `date: string`, `duration_minutes: number`.
+- `frontend/src/pages/LogSession.tsx` (line ~81): `POST /api/sessions` with `{ project_id, date: format(values.date, 'yyyy-MM-dd'), duration_minutes: values.duration }` — remove timestamp computation (lines ~63–78). Same URL as today, just a different body.
+- Session edit flow in `frontend/src/pages/Sessions.tsx`: `PUT /api/sessions/{id}` with `{ date, duration_minutes }` instead of `{ start_time, end_time }`.
   - `formatDuration` (line ~68): use `session.duration_minutes` directly.
   - `formatStartDate` (line ~79): use `session.date` directly.
   - Update delete dialog description (line ~174).
@@ -186,23 +217,23 @@ Verify:
   - `convertToCompletedSessions` (line ~83): use `session.duration_minutes`; filter on `duration_minutes != null`; store `session.date`.
   - `groupSessionsIntoTimeSegments` (line ~100): parse date as local midnight `new Date(session.date + 'T00:00:00')` to avoid UTC/local mismatch with segment boundaries.
   - `totalDuration` (line ~240): sum `session.duration_minutes` directly.
-- `frontend/src/hooks/useSessions.ts`: rename params `minStartTime`/`maxStartTime` → `minDate`/`maxDate` (as `Date` objects); format internally as `yyyy-MM-dd`; send as `min_date`/`max_date` (GET stays at `/api/sessions`).
+- `frontend/src/hooks/useSessions.ts`: rename params `minStartTime`/`maxStartTime` → `minDate`/`maxDate` (as `Date` objects); format internally as `yyyy-MM-dd`; send as `min_date`/`max_date`.
 - Update `SessionsChart.tsx` call site (line ~204) accordingly.
-- `create_time` is not currently rendered anywhere in the UI — no component changes needed beyond the type addition.
 
 ---
 
-## Step 6 — Backend: remove old `/api/sessions` write handlers and old fields from code
+## Step 6 — Backend: drop old-field support from the API contract
 
-Only once the frontend no longer calls the old write endpoints:
+Only once the frontend no longer sends `start_time`/`end_time`:
 
-- `backend/app/routers/sessions.py`: delete `create_session` and `update_session` entirely — removes `POST /api/sessions`, `PUT /api/sessions/{id}`. `get_session`, `get_sessions`, `delete_session` stay, with old-field references (`min_start_time`/`max_start_time`, `start_time`/`end_time`/`created_at` in SQL) removed.
-- `backend/app/schemas.py` / `backend/app/models.py`: remove the old `SessionCreate`/`SessionUpdate` schemas and `start_time`/`end_time`/`created_at` from `Session` entirely.
-- `backend/app/database.py`: `CREATE TABLE` drops `start_time`, `end_time`, `created_at`.
+- `backend/app/schemas.py`: remove `start_time`/`end_time`/the validator/old-style branch from `SessionCreate`/`SessionUpdate` — `date`/`duration_minutes` become required, plain fields again. Remove `start_time`/`end_time` from the `Session` response schema.
+- `backend/app/routers/sessions.py`: `create_session`/`update_session` drop the old-style branch entirely — always derive from `session.date`/`session.duration_minutes`, and stop including `start_time`/`end_time` in the `INSERT`/`UPDATE` SQL at all (the columns still exist until Step 7, so omitting them just leaves whatever they already were — `NULL` for any row touched since Step 4).
+- `backend/app/routers/sessions.py:get_sessions`: remove `min_start_time`/`max_start_time` params and their SQL.
+- `backend/app/models.py` is **not** touched here — it still mirrors the actual DB row, which still has `start_time`/`end_time`/`created_at` columns until Step 7 drops them. Trimming it now would be premature; that happens in Step 7 instead.
 
 ---
 
-## Step 7 — DB: drop old columns
+## Step 7 — DB: drop old columns, then catch up `models.py`/`database.py`
 
 ```sql
 ALTER TABLE sessions DROP COLUMN start_time;
@@ -210,40 +241,16 @@ ALTER TABLE sessions DROP COLUMN end_time;
 ALTER TABLE sessions DROP COLUMN created_at;
 ```
 
-By this point the columns are already nullable, so a plain `DROP COLUMN` (SQLite 3.35+, same requirement as `RETURNING`) works directly — no table rebuild needed here, unlike Step 1. Run on prod DB and verify with `.schema sessions`.
+The columns are already nullable, so a plain `DROP COLUMN` (SQLite 3.35+, same requirement as `RETURNING`) works directly — no table rebuild needed here, unlike Step 1. Run on prod DB and verify with `.schema sessions`.
 
-Adding `NOT NULL` constraints to `date`/`duration_minutes`/`create_time` requires table recreation again (SQLite limitation) — optional, since code guarantees non-null values after Steps 2–3 and Step 6 removed the only write path that could leave them null.
+Now that the columns are actually gone, update the code that still reads them:
+- `backend/app/models.py`: remove `start_time`, `end_time`, `created_at` from the `Session` dataclass and `from_row()` — `row["start_time"]` etc. would `KeyError` once the columns don't exist.
+- `backend/app/database.py`: `CREATE TABLE IF NOT EXISTS` drops `start_time`, `end_time`, `created_at` for fresh databases.
 
----
-
-## Step 8 — Backend + frontend: promote `sessions-temp` logic to its real home, `/api/v1/sessions`
-
-Purely a routing rename — no schema or logic changes, since `sessions-temp` and old `/api/sessions` were already retired/superseded by Steps 6–7.
-
-- In `backend/app/routers/sessions_temp.py`, add a second path decorator to the same handler functions, so both paths route to identical logic during the overlap window:
-  ```python
-  @router.post("/sessions-temp")
-  @router.post("/sessions")
-  async def create_session_new(...): ...
-
-  @router.put("/sessions-temp/{session_id}")
-  @router.put("/sessions/{session_id}")
-  async def update_session_new(...): ...
-  ```
-  This gives `POST`/`PUT /api/v1/sessions` (new final path) alongside the still-live `/api/v1/sessions-temp` (old temp path) — both work identically.
-- Frontend migrates its write calls a second time: `/api/v1/sessions-temp` → `/api/v1/sessions` in `LogSession.tsx` and `Sessions.tsx` (same request/response shapes, only the URL changes).
-
----
-
-## Step 9 — Backend: remove `sessions-temp` entirely
-
-Once frontend no longer calls `/api/v1/sessions-temp`:
-
-- Remove the `@router.post("/sessions-temp")` / `@router.put("/sessions-temp/{session_id}")` decorators added in Step 4/8, leaving only the `/sessions` decorators.
-- Consider renaming `sessions_temp.py` → `sessions_v1.py` or folding it into the main `sessions.py` router at this point, now that "temp" no longer describes it. Not required for correctness, just cleanup.
+Adding `NOT NULL` constraints to `date`/`duration_minutes`/`create_time` requires table recreation again (SQLite limitation) — optional, since code guarantees non-null values after Steps 2–3 and 6 removed the only write path that could leave them null.
 
 ---
 
 ## Key invariant
 
-At no point is data lost. Steps 1–3 are purely additive (new columns, relaxed constraints, backfill) — no existing data is altered destructively. Step 4 introduces the new-fields-only write path as a strict addition, running alongside the existing one. Step 5 shifts frontend traffic to it. Steps 6–7 remove the old contract and old columns once nothing references them. Steps 8–9 are a pure routing rename with no data implications, cleaning up the throwaway `sessions-temp` path once its replacement is live.
+At no point is data lost. Steps 1–3 are purely additive (new columns, relaxed constraints, backfill) — no existing data is altered destructively. Step 4 adds a new accepted input shape to the existing endpoints without removing the old one. Step 5 shifts frontend traffic to the new shape. Step 6 removes the old contract once nothing sends it. Step 7 drops the old columns and updates `models.py`/`database.py` to match, once nothing reads them either.
