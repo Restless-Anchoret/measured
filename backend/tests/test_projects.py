@@ -120,19 +120,12 @@ async def test_get_projects_most_recently_used_sort(client: AsyncClient, test_db
     ids = [r["id"] for r in rows]
     p1, p2, p3, p4, p5 = ids
 
-    now = "2026-01-01 12:00:00"
-    end = "2026-01-01 13:00:00"
-
     # p3: 3 sessions, p1: 2 sessions, p2: 1 session, p4/p5: 0 sessions
-    sessions = [
-        (p1, now, end), (p1, now, end),
-        (p2, now, end),
-        (p3, now, end), (p3, now, end), (p3, now, end),
-    ]
-    for project_id, start, stop in sessions:
+    project_ids = [p1, p1, p2, p3, p3, p3]
+    for project_id in project_ids:
         await test_db.execute(
-            "INSERT INTO sessions (project_id, start_time, end_time, created_at) VALUES (:pid, :s, :e, :c)",
-            {"pid": project_id, "s": start, "e": stop, "c": now},
+            "INSERT INTO sessions (project_id, date, duration_minutes, create_time) VALUES (:project_id, :date, :duration_minutes, :create_time)",
+            {"project_id": project_id, "date": "2026-01-01", "duration_minutes": 60, "create_time": 1767225600000},
         )
 
     response = await client.get("/api/projects?sort=MOST_RECENTLY_USED")
@@ -150,18 +143,15 @@ async def test_get_projects_most_recently_used_only_last_250_sessions(client: As
     ids = [r["id"] for r in rows]
     p1, p2 = ids[0], ids[1]
 
-    now = "2026-01-01 12:00:00"
-    end = "2026-01-01 13:00:00"
-
     # Insert 251 sessions for p1 (older) and 1 session for p2 (newest)
     for _ in range(251):
         await test_db.execute(
-            "INSERT INTO sessions (project_id, start_time, end_time, created_at) VALUES (:pid, :s, :e, :c)",
-            {"pid": p1, "s": now, "e": end, "c": now},
+            "INSERT INTO sessions (project_id, date, duration_minutes, create_time) VALUES (:project_id, :date, :duration_minutes, :create_time)",
+            {"project_id": p1, "date": "2026-01-01", "duration_minutes": 60, "create_time": 1767225600000},
         )
     await test_db.execute(
-        "INSERT INTO sessions (project_id, start_time, end_time, created_at) VALUES (:pid, :s, :e, :c)",
-        {"pid": p2, "s": now, "e": end, "c": now},
+        "INSERT INTO sessions (project_id, date, duration_minutes, create_time) VALUES (:project_id, :date, :duration_minutes, :create_time)",
+        {"project_id": p2, "date": "2026-01-01", "duration_minutes": 60, "create_time": 1767225600000},
     )
 
     response = await client.get("/api/projects?sort=MOST_RECENTLY_USED")
