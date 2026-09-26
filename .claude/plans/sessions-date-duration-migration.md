@@ -123,23 +123,18 @@ Run against prod DB (via `fly ssh console`):
 ```sql
 UPDATE sessions
 SET
-    date = DATE(sessions.start_time, '+2 hours'),
-    duration_minutes = (ms.end_ms - ms.start_ms) / (1000 * 60),
-    create_time = ms.created_ms
-FROM (
-    SELECT
-        id,
-        CAST(strftime('%s', start_time) AS INTEGER) * 1000 + CAST(substr(strftime('%f', start_time), 4, 3) AS INTEGER) AS start_ms,
-        CAST(strftime('%s', end_time) AS INTEGER) * 1000 + CAST(substr(strftime('%f', end_time), 4, 3) AS INTEGER) AS end_ms,
-        CAST(strftime('%s', created_at) AS INTEGER) * 1000 + CAST(substr(strftime('%f', created_at), 4, 3) AS INTEGER) AS created_ms
-    FROM sessions
-    WHERE date IS NULL
-) AS ms
-WHERE sessions.id = ms.id;
+    date = DATE(start_time, '+2 hours'),
+    duration_minutes = (CAST(strftime('%s', end_time) AS INTEGER) - CAST(strftime('%s', start_time) AS INTEGER)) / 60,
+    create_time = CAST(strftime('%s', created_at) AS INTEGER) * 1000
+WHERE date IS NULL;
 ```
 (`end_time` is `NOT NULL` for every row in production today, so the separate no-`end_time` fallback branch is dead code and dropped. All three new columns are backfilled in one pass.)
 
-No `julianday()` anywhere. `strftime('%s', x)` returns the exact integer count of whole seconds since the Unix epoch. `strftime('%f', x)` returns a fixed `"SS.SSS"` string (2-digit seconds, decimal point, 3-digit milliseconds); `substr(..., 4, 3)` pulls out just those 3 millisecond digits by position, as a string — no float division or multiplication involved anywhere. The subquery computes each timestamp's exact millisecond value once per row (`start_ms`/`end_ms`/`created_ms`), then the outer `UPDATE ... FROM` does plain integer subtraction and division: `duration_minutes` truncates any leftover sub-minute remainder (integer `/`, not rounded to nearest minute — a minor behavior change from the previous `ROUND()`-based version; flag if you'd rather round to nearest minute instead of truncating). `create_time` is now just `created_ms` directly, already the correct unit.
+No `julianday()` anywhere, and no millisecond extraction either — dropped since it's unnecessary here:
+- `duration_minutes` only needs minute-level output, so the final `/ 60` throws away sub-second precision regardless of whether the subtraction was done in seconds or milliseconds — using `strftime('%s', x)` (whole seconds) directly is exactly as accurate as the millisecond version for this purpose.
+- `create_time`'s source, `created_at`, was always written via SQLite's `CURRENT_TIMESTAMP`, which is documented to produce whole-second precision only — confirmed against the actual historical data (e.g. `'2026-06-20 14:04:26'`, `'2026-06-06 17:11:29'`, no fractional seconds on any row). So the millisecond component would always be `0` for every row this backfill touches; `strftime('%s', created_at) * 1000` is exact, not an approximation.
+
+`strftime('%s', x)` returns the exact integer count of whole seconds since the Unix epoch — still no floats anywhere. `duration_minutes` truncates any leftover sub-minute remainder (integer `/`, not rounded to nearest minute).
 
 `start_time` is stored in UTC; `+2 hours` offsets to UTC+2 before extracting the date. All existing sessions are assumed to belong to a UTC+2 user.
 
