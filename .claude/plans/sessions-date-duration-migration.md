@@ -229,11 +229,12 @@ Only once the frontend no longer sends `start_time`/`end_time`:
 - `backend/app/schemas.py`: remove `start_time`/`end_time`/the validator/old-style branch from `SessionCreate`/`SessionUpdate` — `date`/`duration_minutes` become required, plain fields again. Remove `start_time`/`end_time` from the `Session` response schema.
 - `backend/app/routers/sessions.py`: `create_session`/`update_session` drop the old-style branch entirely — always derive from `session.date`/`session.duration_minutes`, and stop including `start_time`/`end_time` in the `INSERT`/`UPDATE` SQL at all (the columns still exist until Step 7, so omitting them just leaves whatever they already were — `NULL` for any row touched since Step 4).
 - `backend/app/routers/sessions.py:get_sessions`: remove `min_start_time`/`max_start_time` params and their SQL.
-- `backend/app/models.py` is **not** touched here — it still mirrors the actual DB row, which still has `start_time`/`end_time`/`created_at` columns until Step 7 drops them. Trimming it now would be premature; that happens in Step 7 instead.
+- `backend/app/models.py`: remove `start_time`, `end_time`, `created_at` from the `Session` dataclass and `from_row()`. Safe even though the DB columns still exist at this point — `SELECT *` still returns them, `from_row()` just no longer reads those keys, so they're silently ignored. This has to happen *before* Step 7 drops the columns, not after: deploying code and running a DB migration are separate, non-atomic actions in this project (commit + `fly deploy`, then separately `fly ssh console` for SQL) — if the columns were dropped first, the still-running old code's `row["start_time"]` would `KeyError` on every request until the new code deployed. Code must stop touching a column before the column disappears, not simultaneously.
+- `backend/app/database.py`: `CREATE TABLE IF NOT EXISTS` drops `start_time`, `end_time`, `created_at` too (only affects fresh dev/test databases — the live prod table already exists, so this doesn't touch it; Step 7 handles prod).
 
 ---
 
-## Step 7 — DB: drop old columns, then catch up `models.py`/`database.py`
+## Step 7 — DB: drop old columns
 
 ```sql
 ALTER TABLE sessions DROP COLUMN start_time;
@@ -241,11 +242,7 @@ ALTER TABLE sessions DROP COLUMN end_time;
 ALTER TABLE sessions DROP COLUMN created_at;
 ```
 
-The columns are already nullable, so a plain `DROP COLUMN` (SQLite 3.35+, same requirement as `RETURNING`) works directly — no table rebuild needed here, unlike Step 1. Run on prod DB and verify with `.schema sessions`.
-
-Now that the columns are actually gone, update the code that still reads them:
-- `backend/app/models.py`: remove `start_time`, `end_time`, `created_at` from the `Session` dataclass and `from_row()` — `row["start_time"]` etc. would `KeyError` once the columns don't exist.
-- `backend/app/database.py`: `CREATE TABLE IF NOT EXISTS` drops `start_time`, `end_time`, `created_at` for fresh databases.
+The columns are already nullable, so a plain `DROP COLUMN` (SQLite 3.35+, same requirement as `RETURNING`) works directly — no table rebuild needed here, unlike Step 1. Safe to run any time after Step 6's code is deployed and live, since nothing in the codebase references these columns anymore by that point. Run on prod DB and verify with `.schema sessions`.
 
 Adding `NOT NULL` constraints to `date`/`duration_minutes`/`create_time` requires table recreation again (SQLite limitation) — optional, since code guarantees non-null values after Steps 2–3 and 6 removed the only write path that could leave them null.
 
@@ -253,4 +250,4 @@ Adding `NOT NULL` constraints to `date`/`duration_minutes`/`create_time` require
 
 ## Key invariant
 
-At no point is data lost. Steps 1–3 are purely additive (new columns, relaxed constraints, backfill) — no existing data is altered destructively. Step 4 adds a new accepted input shape to the existing endpoints without removing the old one. Step 5 shifts frontend traffic to the new shape. Step 6 removes the old contract once nothing sends it. Step 7 drops the old columns and updates `models.py`/`database.py` to match, once nothing reads them either.
+At no point is data lost. Steps 1–3 are purely additive (new columns, relaxed constraints, backfill) — no existing data is altered destructively. Step 4 adds a new accepted input shape to the existing endpoints without removing the old one. Step 5 shifts frontend traffic to the new shape. Step 6 removes the old contract *and* stops all code from reading the old columns, once nothing sends or needs them. Step 7 drops the old columns from the DB only once Step 6's code is confirmed deployed and live — code always stops depending on a column before the column is removed, never after.
