@@ -234,17 +234,50 @@ Only once the frontend no longer sends `start_time`/`end_time`:
 
 ---
 
-## Step 7 — DB: drop old columns
+## Step 7 — DB: archive start_time/end_time, then drop old columns
+
+`date`/`duration_minutes` can never recover what time of day a session happened — that's real information `start_time`/`end_time` carry and nothing else does. Before dropping them, snapshot them into a separate, permanent archive table (not used by the app at all, just in case they're useful later):
 
 ```sql
-ALTER TABLE sessions DROP COLUMN start_time;
-ALTER TABLE sessions DROP COLUMN end_time;
-ALTER TABLE sessions DROP COLUMN created_at;
+CREATE TABLE sessions_legacy_data AS
+SELECT id, start_time, end_time FROM sessions WHERE start_time IS NOT NULL;
 ```
 
-The columns are already nullable, so a plain `DROP COLUMN` (SQLite 3.35+, same requirement as `RETURNING`) works directly — no table rebuild needed here, unlike Step 1. Safe to run any time after Step 6's code is deployed and live, since nothing in the codebase references these columns anymore by that point. Run on prod DB and verify with `.schema sessions`.
+This is a one-time snapshot, not an ongoing table — no `sessions.id` foreign key (so it stays intact even if a session is later deleted from `sessions`), and filtered to `start_time IS NOT NULL` since any session created via the `date`/`duration_minutes` path (Step 4 onward) never had these fields populated to begin with. `created_at` is deliberately excluded — historical `created_at` values are always whole-second precision (written via `CURRENT_TIMESTAMP`), and `create_time` already captures the exact same instant losslessly, so there's nothing there worth archiving separately.
 
-Adding `NOT NULL` constraints to `date`/`duration_minutes`/`create_time` requires table recreation again (SQLite limitation) — optional, since code guarantees non-null values after Steps 2–3 and 6 removed the only write path that could leave them null.
+Then drop the old columns *and* add `NOT NULL` to `date`/`duration_minutes`/`create_time` in one pass. SQLite can't do either of these via a plain `ALTER TABLE` (`DROP COLUMN` works alone, but adding a `NOT NULL` constraint needs a full rebuild regardless) — so rather than a `DROP COLUMN` followed by a separate rebuild, do both in a single table recreation, the same pattern as Step 1:
+
+```sql
+PRAGMA foreign_keys=off;
+
+CREATE TABLE sessions_new (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    project_id INTEGER NOT NULL,
+    date TEXT NOT NULL,
+    duration_minutes INTEGER NOT NULL,
+    create_time BIGINT NOT NULL,
+    FOREIGN KEY (project_id) REFERENCES projects(id)
+);
+
+INSERT INTO sessions_new (id, project_id, date, duration_minutes, create_time)
+SELECT id, project_id, date, duration_minutes, create_time FROM sessions;
+
+DROP TABLE sessions;
+ALTER TABLE sessions_new RENAME TO sessions;
+
+PRAGMA foreign_keys=on;
+```
+
+Safe to run any time after Step 6's code is deployed and live, since nothing in the codebase references `start_time`/`end_time`/`created_at` anymore by that point, and code has guaranteed `date`/`duration_minutes`/`create_time` are non-null on every row since Steps 2–3 and 6. Run on prod DB and verify with `.schema sessions`.
+
+Verify the `AUTOINCREMENT` sequence carried over correctly, same check as Step 1 (explicit `id` values in the copy, and this table is the only `AUTOINCREMENT` table in the database — `sqlite_sequence` gets dropped entirely for the brief window between `DROP TABLE sessions` and the rename, then recreated):
+```sql
+SELECT seq FROM sqlite_sequence WHERE name = 'sessions';
+SELECT MAX(id) FROM sessions;
+```
+These two values should be equal.
+
+Finally, update `backend/app/database.py`'s `CREATE TABLE IF NOT EXISTS` to match this final shape (`date`/`duration_minutes`/`create_time` all `NOT NULL`, `start_time`/`end_time`/`created_at` gone), so fresh databases get the same schema directly.
 
 ---
 
