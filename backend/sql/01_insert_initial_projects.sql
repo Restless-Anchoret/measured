@@ -15,7 +15,7 @@ INSERT INTO projects (name) VALUES
 ('Reading non-fiction'),
 ('English'),
 ('Diary'),
-('Meatings'),
+('Meetings'),
 ('Slow walking'),
 ('Growth sessions');
 

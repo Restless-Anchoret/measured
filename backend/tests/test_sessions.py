@@ -184,8 +184,8 @@ async def test_get_sessions_pagination_validation(client: AsyncClient):
     response = await client.get("/api/sessions?page_size=0")
     assert response.status_code == 400
     
-    # Test page_size too large (greater than 1000)
-    response = await client.get("/api/sessions?page_size=1001")
+    # Test page_size too large (greater than 5000)
+    response = await client.get("/api/sessions?page_size=5001")
     assert response.status_code == 400
     
     # Test valid parameters

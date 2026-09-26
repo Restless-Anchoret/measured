@@ -38,13 +38,18 @@ async def init_db(db: databases.Database | None = None):
     # Using TIMESTAMP for cross-database compatibility
     # SQLite stores as TEXT but accepts TIMESTAMP type
     # PostgreSQL and MySQL use native TIMESTAMP/DATETIME types
+    # start_time/end_time/created_at are nullable: rows created via the new
+    # date/duration_minutes write path never populate them.
     await target_db.execute("""
         CREATE TABLE IF NOT EXISTS sessions (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             project_id INTEGER NOT NULL,
-            start_time TIMESTAMP NOT NULL,
+            start_time TIMESTAMP,
             end_time TIMESTAMP,
-            created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            created_at TIMESTAMP,
+            date TEXT,
+            duration_minutes INTEGER,
+            create_time BIGINT,
             FOREIGN KEY (project_id) REFERENCES projects(id)
         )
     """)
