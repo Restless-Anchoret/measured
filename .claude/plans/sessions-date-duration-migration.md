@@ -206,19 +206,19 @@ Verify:
 
 ## Step 5 — Frontend: send `date`/`duration_minutes` to the same endpoints
 
-- `frontend/src/lib/types.ts`: `Session` type — `start_time`/`end_time` become optional/nullable; add `date: string`, `duration_minutes: number`.
-- `frontend/src/pages/LogSession.tsx` (line ~81): `POST /api/sessions` with `{ project_id, date: format(values.date, 'yyyy-MM-dd'), duration_minutes: values.duration }` — remove timestamp computation (lines ~63–78). Same URL as today, just a different body.
-- Session edit flow in `frontend/src/pages/Sessions.tsx`: `PUT /api/sessions/{id}` with `{ date, duration_minutes }` instead of `{ start_time, end_time }`.
+- `frontend/src/lib/types.ts`: `Session` type — remove `start_time`/`end_time` entirely; add `date: string` (ISO date, `YYYY-MM-DD`), `duration_minutes: number`.
+- `frontend/src/pages/LogSession.tsx` (line ~81): `POST /api/sessions` with `{ project_id, date: format(values.date, 'yyyy-MM-dd'), duration_minutes: values.duration }` — remove timestamp computation (lines ~63–78).
+- `frontend/src/pages/Sessions.tsx`:
   - `formatDuration` (line ~68): use `session.duration_minutes` directly.
   - `formatStartDate` (line ~79): use `session.date` directly.
   - Update delete dialog description (line ~174).
 - `frontend/src/components/SessionsChart.tsx`:
   - `CompletedSession`: replace `startTime: Date` with `date: string`.
-  - `convertToCompletedSessions` (line ~83): use `session.duration_minutes`; filter on `duration_minutes != null`; store `session.date`.
+  - `convertToCompletedSessions` (line ~83): use `session.duration_minutes` and `session.date` directly, no null filter needed.
   - `groupSessionsIntoTimeSegments` (line ~100): parse date as local midnight `new Date(session.date + 'T00:00:00')` to avoid UTC/local mismatch with segment boundaries.
   - `totalDuration` (line ~240): sum `session.duration_minutes` directly.
-- `frontend/src/hooks/useSessions.ts`: rename params `minStartTime`/`maxStartTime` → `minDate`/`maxDate` (as `Date` objects); format internally as `yyyy-MM-dd`; send as `min_date`/`max_date`.
-- Update `SessionsChart.tsx` call site (line ~204) accordingly.
+- `frontend/src/hooks/useSessions.ts`: rename params `minStartTime?: Date`/`maxStartTime?: Date` → `minDate?: string`/`maxDate?: string`, passed straight through as `min_date`/`max_date` query params.
+- `SessionsChart.tsx` call site (line ~204): format `dateRange.fromDate`/`dateRange.toDate` to `yyyy-MM-dd` before passing as `minDate`/`maxDate`.
 
 ---
 
