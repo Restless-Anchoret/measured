@@ -1,5 +1,5 @@
 from pydantic import BaseModel, ConfigDict
-from datetime import datetime
+from datetime import date as date_type, datetime
 from typing import Optional
 from enum import Enum
 
@@ -41,10 +41,14 @@ class SessionUpdate(BaseModel):
     end_time: datetime
 
 
-class Session(SessionBase):
+class Session(BaseModel):
     id: int
-    created_at: datetime
-    
+    project_id: int
+    start_time: Optional[datetime] = None
+    end_time: Optional[datetime] = None
+    date: Optional[date_type] = None
+    duration_minutes: Optional[int] = None
+
     model_config = ConfigDict(from_attributes=True)
 
 

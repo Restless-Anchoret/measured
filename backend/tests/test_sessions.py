@@ -74,7 +74,8 @@ async def test_create_session(client: AsyncClient):
     assert session["project_id"] == project_id
     assert session["start_time"] is not None
     assert session["end_time"] is not None
-    assert "created_at" in session
+    assert session["date"] is not None
+    assert session["duration_minutes"] == 120
 
 
 @pytest.mark.asyncio
@@ -96,6 +97,8 @@ async def test_create_session_without_end_time(client: AsyncClient):
     assert session["project_id"] == project_id
     assert session["start_time"] is not None
     assert session["end_time"] is None
+    assert session["date"] is not None
+    assert session["duration_minutes"] is None
 
 
 @pytest.mark.asyncio
@@ -253,8 +256,9 @@ async def test_update_session(client: AsyncClient):
     assert updated_session["project_id"] == project_id
     assert updated_session["start_time"] == new_start_time.isoformat()
     assert updated_session["end_time"] == new_end_time.isoformat()
-    # created_at should not change
-    assert updated_session["created_at"] == created_session["created_at"]
+    # date/duration_minutes should reflect the new start_time/end_time
+    assert updated_session["duration_minutes"] == 180
+    assert updated_session["date"] is not None
 
 
 @pytest.mark.asyncio

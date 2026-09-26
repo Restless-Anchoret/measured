@@ -4,9 +4,12 @@ from app.database import get_db
 from app.models import Session
 from app.schemas import Session as SessionSchema, SessionCreate, SessionUpdate, PaginatedSessions
 from typing import Annotated, Optional
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
+from zoneinfo import ZoneInfo
 
 router = APIRouter()
+
+AMSTERDAM_TZ = ZoneInfo("Europe/Amsterdam")
 
 
 @router.post("/sessions", response_model=SessionSchema, status_code=201)
@@ -22,19 +25,31 @@ async def create_session(
     )
     if not project_row:
         raise HTTPException(status_code=404, detail="Project not found")
-    
+
+    date = session.start_time.astimezone(AMSTERDAM_TZ).date().isoformat()
+    duration_minutes = (
+        int((session.end_time - session.start_time).total_seconds() / 60)
+        if session.end_time else None
+    )
+
+    now = datetime.now(timezone.utc)
+    create_time = (now - datetime(1970, 1, 1, tzinfo=timezone.utc)) // timedelta(milliseconds=1)
+
     # Create session using RETURNING clause (SQLite 3.35+)
-    # Insert the session with explicit created_at to ensure it's returned in RETURNING
     row = await db.fetch_one(
         """
-        INSERT INTO sessions (project_id, start_time, end_time, created_at)
-        VALUES (:project_id, :start_time, :end_time, CURRENT_TIMESTAMP)
+        INSERT INTO sessions (project_id, start_time, end_time, created_at, date, duration_minutes, create_time)
+        VALUES (:project_id, :start_time, :end_time, :created_at, :date, :duration_minutes, :create_time)
         RETURNING *
         """,
         {
             "project_id": session.project_id,
             "start_time": session.start_time.isoformat(),
-            "end_time": session.end_time.isoformat() if session.end_time else None
+            "end_time": session.end_time.isoformat() if session.end_time else None,
+            "created_at": now.isoformat(),
+            "date": date,
+            "duration_minutes": duration_minutes,
+            "create_time": create_time,
         }
     )
     
@@ -129,17 +144,22 @@ async def update_session(
     )
     if not row:
         raise HTTPException(status_code=404, detail="Session not found")
-    
+
+    date = session_update.start_time.astimezone(AMSTERDAM_TZ).date().isoformat()
+    duration_minutes = int((session_update.end_time - session_update.start_time).total_seconds() / 60)
+
     # Update session
     await db.execute(
         """
         UPDATE sessions
-        SET start_time = :start_time, end_time = :end_time
+        SET start_time = :start_time, end_time = :end_time, date = :date, duration_minutes = :duration_minutes
         WHERE id = :session_id
         """,
         {
             "start_time": session_update.start_time.isoformat(),
             "end_time": session_update.end_time.isoformat(),
+            "date": date,
+            "duration_minutes": duration_minutes,
             "session_id": session_id
         }
     )
