@@ -39,9 +39,9 @@ async def init_db(db: databases.Database | None = None):
         CREATE TABLE IF NOT EXISTS sessions (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             project_id INTEGER NOT NULL,
-            date TEXT,
-            duration_minutes INTEGER,
-            create_time BIGINT,
+            date TEXT NOT NULL,
+            duration_minutes INTEGER NOT NULL,
+            create_time BIGINT NOT NULL,
             FOREIGN KEY (project_id) REFERENCES projects(id)
         )
     """)
