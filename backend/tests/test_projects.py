@@ -2,6 +2,7 @@
 Integration tests for the projects endpoint.
 """
 import pytest
+from datetime import date
 from httpx import AsyncClient
 
 
@@ -125,7 +126,7 @@ async def test_get_projects_most_recently_used_sort(client: AsyncClient, test_db
     for project_id in project_ids:
         await test_db.execute(
             "INSERT INTO sessions (project_id, date, duration_minutes, create_time) VALUES (:project_id, :date, :duration_minutes, :create_time)",
-            {"project_id": project_id, "date": "2026-01-01", "duration_minutes": 60, "create_time": 1767225600000},
+            {"project_id": project_id, "date": date(2026, 1, 1), "duration_minutes": 60, "create_time": 1767225600000},
         )
 
     response = await client.get("/api/projects?sort=MOST_RECENTLY_USED")
@@ -147,11 +148,11 @@ async def test_get_projects_most_recently_used_only_last_250_sessions(client: As
     for _ in range(251):
         await test_db.execute(
             "INSERT INTO sessions (project_id, date, duration_minutes, create_time) VALUES (:project_id, :date, :duration_minutes, :create_time)",
-            {"project_id": p1, "date": "2026-01-01", "duration_minutes": 60, "create_time": 1767225600000},
+            {"project_id": p1, "date": date(2026, 1, 1), "duration_minutes": 60, "create_time": 1767225600000},
         )
     await test_db.execute(
         "INSERT INTO sessions (project_id, date, duration_minutes, create_time) VALUES (:project_id, :date, :duration_minutes, :create_time)",
-        {"project_id": p2, "date": "2026-01-01", "duration_minutes": 60, "create_time": 1767225600000},
+        {"project_id": p2, "date": date(2026, 1, 1), "duration_minutes": 60, "create_time": 1767225600000},
     )
 
     response = await client.get("/api/projects?sort=MOST_RECENTLY_USED")
