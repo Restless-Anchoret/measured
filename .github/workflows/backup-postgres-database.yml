@@ -46,7 +46,10 @@ jobs:
           # Check the decompressed content, not just the gzip wrapper's byte count --
           # gzip-of-nothing is still a non-empty file, which is exactly how a silently
           # failed pg_dump slipped past this check before.
-          if ! gunzip -c "${{ env.BACKUP_FILENAME }}" | grep -q "PostgreSQL database dump"; then
+          # Deliberately not "grep -q" here: -q exits on the first match, which (with
+          # set -o pipefail above) makes gunzip's resulting SIGPIPE/broken-pipe look like
+          # a pipeline failure even though grep actually found the match successfully.
+          if ! gunzip -c "${{ env.BACKUP_FILENAME }}" | grep "PostgreSQL database dump" > /dev/null; then
             echo "Error: Backup does not look like real pg_dump output"
             exit 1
           fi
