@@ -1,18 +1,12 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 import databases
-from app.database import get_db, is_sqlite_db
+from app.database import get_db
 from app.models import Session
 from app.schemas import Session as SessionSchema, SessionCreate, SessionUpdate, PaginatedSessions
 from typing import Annotated, Optional
 from datetime import date, datetime, timezone, timedelta
 
 router = APIRouter()
-
-
-def adapt_date(db: databases.Database, d: date) -> "str | date":
-    """SQLite's date column is TEXT (needs an ISO string); Postgres's is a native
-    DATE column and asyncpg rejects a plain str bound against it."""
-    return d.isoformat() if is_sqlite_db(db) else d
 
 
 @router.post("/sessions", response_model=SessionSchema, status_code=201)
@@ -41,7 +35,7 @@ async def create_session(
         """,
         {
             "project_id": session.project_id,
-            "date": adapt_date(db, session.date),
+            "date": session.date,
             "duration_minutes": session.duration_minutes,
             "create_time": create_time,
         }
@@ -70,11 +64,11 @@ async def get_sessions(
 
     if min_date:
         where_clauses.append("date >= :min_date")
-        filter_params["min_date"] = adapt_date(db, min_date)
+        filter_params["min_date"] = min_date
 
     if max_date:
         where_clauses.append("date < :max_date")
-        filter_params["max_date"] = adapt_date(db, max_date)
+        filter_params["max_date"] = max_date
 
     if project_id:
         # Build IN clause for multiple project IDs
@@ -147,7 +141,7 @@ async def update_session(
         WHERE id = :session_id
         """,
         {
-            "date": adapt_date(db, session_update.date),
+            "date": session_update.date,
             "duration_minutes": session_update.duration_minutes,
             "session_id": session_id
         }

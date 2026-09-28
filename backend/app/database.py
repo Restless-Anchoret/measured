@@ -2,18 +2,11 @@ import databases
 import os
 from typing import AsyncGenerator
 
-# Database URL - supports SQLite, PostgreSQL, MySQL, etc.
-# Default: local development uses ./measured.db
-# Production (Fly.io): uses /data/measured.db (set via environment variable)
-DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./measured.db")
+# Postgres-only: local dev via docker-compose, production via Fly secret, tests via testcontainers.
+DATABASE_URL = os.environ["DATABASE_URL"]
 
 # Create database instance
 database = databases.Database(DATABASE_URL)
-
-
-def is_sqlite_db(db: databases.Database) -> bool:
-    """Whether the given database connection is SQLite (vs. Postgres)."""
-    return str(db.url).startswith("sqlite")
 
 
 async def get_db() -> AsyncGenerator[databases.Database, None]:
@@ -28,14 +21,11 @@ async def init_db(db: databases.Database | None = None):
         db: Optional database instance. If not provided, uses the global database instance.
     """
     target_db = db if db is not None else database
-    is_sqlite = is_sqlite_db(target_db)
-    pk = "INTEGER PRIMARY KEY AUTOINCREMENT" if is_sqlite else "INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY"
-    date_type = "TEXT" if is_sqlite else "DATE"
 
     # Create projects table
-    await target_db.execute(f"""
+    await target_db.execute("""
         CREATE TABLE IF NOT EXISTS projects (
-            id {pk},
+            id INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
             name TEXT NOT NULL UNIQUE,
             color VARCHAR(7) NOT NULL,
             extra_color VARCHAR(7)
@@ -43,11 +33,11 @@ async def init_db(db: databases.Database | None = None):
     """)
 
     # Create sessions table
-    await target_db.execute(f"""
+    await target_db.execute("""
         CREATE TABLE IF NOT EXISTS sessions (
-            id {pk},
+            id INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
             project_id INTEGER NOT NULL,
-            date {date_type} NOT NULL,
+            date DATE NOT NULL,
             duration_minutes INTEGER NOT NULL,
             create_time BIGINT NOT NULL,
             FOREIGN KEY (project_id) REFERENCES projects(id)

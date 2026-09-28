@@ -2,11 +2,18 @@
 Pytest configuration and fixtures for integration tests.
 """
 import asyncio
+import os
 import pytest
 import databases
 from typing import AsyncGenerator
 from testcontainers.community.postgres import PostgresContainer
 from httpx import AsyncClient, ASGITransport
+
+# app.database requires DATABASE_URL to be set at import time, but its module-level
+# `database` global is never actually used by these tests -- get_db is overridden per-test
+# to yield a testcontainers-backed connection instead. This placeholder just satisfies the
+# import; it's never connected to.
+os.environ.setdefault("DATABASE_URL", "postgresql://unused:unused@localhost/unused")
 
 from app.main import app
 from app.database import init_db, get_db

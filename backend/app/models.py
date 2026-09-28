@@ -39,7 +39,7 @@ class Session:
         return cls(
             id=row["id"],
             project_id=row["project_id"],
-            date=row["date"] if isinstance(row["date"], date) else date.fromisoformat(row["date"]) if row["date"] else None,
+            date=row["date"],
             duration_minutes=row["duration_minutes"],
-            create_time=datetime(1970, 1, 1, tzinfo=timezone.utc) + timedelta(milliseconds=row["create_time"]) if row["create_time"] else None,
+            create_time=datetime(1970, 1, 1, tzinfo=timezone.utc) + timedelta(milliseconds=row["create_time"]),
         )
