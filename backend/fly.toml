@@ -9,9 +9,6 @@ primary_region = 'ams'
 [build]
   dockerfile = 'Dockerfile'
 
-[env]
-  DATABASE_URL = 'sqlite:////data/measured.db'
-
 [[mounts]]
   source = 'measured_data'
   destination = '/data'
