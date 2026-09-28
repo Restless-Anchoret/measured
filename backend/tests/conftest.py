@@ -25,7 +25,7 @@ def event_loop():
 @pytest.fixture(scope="session")
 def postgres_container():
     """Start a real Postgres container for the whole test session."""
-    with PostgresContainer("postgres:16") as pg:
+    with PostgresContainer("postgres:18") as pg:
         yield pg
 
 

@@ -14,13 +14,12 @@ jobs:
       - name: Install Fly.io CLI
         uses: superfly/flyctl-actions/setup-flyctl@master
 
-      - name: Install PostgreSQL client
-        run: sudo apt-get update && sudo apt-get install -y postgresql-client
-
       - name: Open tunnel and dump database
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+          PGPASSWORD: ${{ secrets.POSTGRES_BACKUP_PASSWORD }}
         run: |
+          set -o pipefail
           TIMESTAMP=$(date +%Y-%m-%d)
           echo "BACKUP_FILENAME=pg-backup-${TIMESTAMP}.sql.gz" >> $GITHUB_ENV
 
@@ -28,16 +27,27 @@ jobs:
           PROXY_PID=$!
           sleep 5  # wait for the tunnel to establish
 
-          PGPASSWORD="${{ secrets.POSTGRES_BACKUP_PASSWORD }}" \
-            pg_dump -h localhost -p 15432 -U measured_backend -d measured_backend \
+          # Run pg_dump from a postgres:18 container rather than apt's "postgresql-client"
+          # package -- the Fly Postgres cluster runs Postgres 18, and pg_dump refuses to
+          # dump from a server newer than itself, which apt's default (16.x) silently was.
+          docker run --rm --network host -e PGPASSWORD \
+            postgres:18 pg_dump -h localhost -p 15432 -U measured_backend -d measured_backend \
             | gzip > pg-backup-${TIMESTAMP}.sql.gz
 
           kill $PROXY_PID
 
       - name: Verify backup is non-empty
         run: |
+          set -o pipefail
           if [ ! -s "${{ env.BACKUP_FILENAME }}" ]; then
             echo "Error: Backup file is empty or does not exist"
+            exit 1
+          fi
+          # Check the decompressed content, not just the gzip wrapper's byte count --
+          # gzip-of-nothing is still a non-empty file, which is exactly how a silently
+          # failed pg_dump slipped past this check before.
+          if ! gunzip -c "${{ env.BACKUP_FILENAME }}" | grep -q "PostgreSQL database dump"; then
+            echo "Error: Backup does not look like real pg_dump output"
             exit 1
           fi
           ls -lh ${{ env.BACKUP_FILENAME }}

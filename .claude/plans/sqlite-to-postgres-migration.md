@@ -14,7 +14,7 @@ The original detailed plan document for this migration is unrecoverable — it l
 
 **Schema decision — use Postgres's native `DATE` type for `sessions.date`.** `schemas.py` already types `SessionCreate.date` / `SessionUpdate.date` as `datetime.date`, so a native `date` object coming back from Postgres is the natural fit. `asyncpg` requires an actual `date` object bound against a `DATE` column — a plain `str` is rejected — so the write-side `.isoformat()` calls in `routers/sessions.py` (`create_session`, `update_session`, and the `min_date`/`max_date` filters in `get_sessions`) become dialect-aware: convert to `.isoformat()` only for SQLite, pass the `date` object through unchanged for Postgres. `database.py` gains a small `is_sqlite_db(db)` helper (the same `str(db.url).startswith("sqlite")` check `init_db` already does internally) to back this. The read side needs no dialect flag at all — `models.py`'s `Session.from_row` checks `isinstance(row["date"], date)`, since the value is either already a `date` object (Postgres) or a `str` (SQLite). This also means `min_date`/`max_date` filtering and `ORDER BY date` become genuine typed date comparisons enforced by the column itself, rather than relying on ISO-8601 strings happening to sort lexicographically like the dates they represent.
 
-**Test suite runs against a real Postgres via `testcontainers`, not SQLite.** `tests/conftest.py` (rewritten in [Step 2](#step-2--backend-dual-driver-support-prod-stays-on-sqlite)) starts a real `postgres:16` container via `testcontainers-python`'s `PostgresContainer`, scoped once per test *session* (container startup cost paid once, not per test), runs `init_db()` against it once to create the schema, then does a full `TRUNCATE ... RESTART IDENTITY` clean of the data tables after each test. Isolation is via cleanup, not a wrapping transaction that's rolled back — a test is free to open and commit its own separate transactions (needed for anything exercising multi-request/multi-transaction behavior) without losing isolation from the next test. This needs Docker locally, which Step 1 already assumes for the dev Postgres container; GitHub Actions runners have Docker preinstalled too. SQLite isn't exercised by the automated suite at all — any concern about that path (e.g. does `init_db`'s `is_sqlite` branch still produce a working schema) gets a manual smoke test instead — start the app with no `DATABASE_URL` set and hit a couple endpoints.
+**Test suite runs against a real Postgres via `testcontainers`, not SQLite.** `tests/conftest.py` (rewritten in [Step 2](#step-2--backend-dual-driver-support-prod-stays-on-sqlite)) starts a real `postgres:18` container via `testcontainers-python`'s `PostgresContainer`, scoped once per test *session* (container startup cost paid once, not per test), runs `init_db()` against it once to create the schema, then does a full `TRUNCATE ... RESTART IDENTITY` clean of the data tables after each test. Isolation is via cleanup, not a wrapping transaction that's rolled back — a test is free to open and commit its own separate transactions (needed for anything exercising multi-request/multi-transaction behavior) without losing isolation from the next test. This needs Docker locally, which Step 1 already assumes for the dev Postgres container; GitHub Actions runners have Docker preinstalled too. SQLite isn't exercised by the automated suite at all — any concern about that path (e.g. does `init_db`'s `is_sqlite` branch still produce a working schema) gets a manual smoke test instead — start the app with no `DATABASE_URL` set and hit a couple endpoints.
 
 **Known driver gotcha, handled by convention, not code**: the `databases` library (and modern SQLAlchemy, which it wraps) requires the `postgresql://` URL scheme and rejects the older `postgres://` alias, which is what `fly postgres attach` always prints. Since `DATABASE_URL` is only ever set by hand (`fly secrets set`, see Step 1 and Step 5), the scheme is corrected to `postgresql://` at the point it's typed in — no runtime normalization in `database.py` needed.
 
@@ -27,7 +27,7 @@ The original detailed plan document for this migration is unrecoverable — it l
 ```yaml
 services:
   postgres:
-    image: postgres:16
+    image: postgres:18
     environment:
       POSTGRES_USER: measured
       POSTGRES_PASSWORD: measured
@@ -160,7 +160,7 @@ from app.database import init_db, get_db
 
 @pytest.fixture(scope="session")
 def postgres_container():
-    with PostgresContainer("postgres:16") as pg:
+    with PostgresContainer("postgres:18") as pg:
         yield pg
 
 
@@ -244,13 +244,12 @@ jobs:
       - name: Install Fly.io CLI
         uses: superfly/flyctl-actions/setup-flyctl@master
 
-      - name: Install PostgreSQL client
-        run: sudo apt-get update && sudo apt-get install -y postgresql-client
-
       - name: Open tunnel and dump database
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+          PGPASSWORD: ${{ secrets.POSTGRES_BACKUP_PASSWORD }}
         run: |
+          set -o pipefail
           TIMESTAMP=$(date +%Y-%m-%d)
           echo "BACKUP_FILENAME=pg-backup-${TIMESTAMP}.sql.gz" >> $GITHUB_ENV
 
@@ -258,16 +257,27 @@ jobs:
           PROXY_PID=$!
           sleep 5  # wait for the tunnel to establish
 
-          PGPASSWORD="${{ secrets.POSTGRES_BACKUP_PASSWORD }}" \
-            pg_dump -h localhost -p 15432 -U measured_backend -d measured_backend \
+          # Run pg_dump from a postgres:18 container rather than apt's "postgresql-client"
+          # package -- the Fly Postgres cluster runs Postgres 18, and pg_dump refuses to
+          # dump from a server newer than itself, which apt's default (16.x) silently was.
+          docker run --rm --network host -e PGPASSWORD \
+            postgres:18 pg_dump -h localhost -p 15432 -U measured_backend -d measured_backend \
             | gzip > pg-backup-${TIMESTAMP}.sql.gz
 
           kill $PROXY_PID
 
       - name: Verify backup is non-empty
         run: |
+          set -o pipefail
           if [ ! -s "${{ env.BACKUP_FILENAME }}" ]; then
             echo "Error: Backup file is empty or does not exist"
+            exit 1
+          fi
+          # Check the decompressed content, not just the gzip wrapper's byte count --
+          # gzip-of-nothing is still a non-empty file, which is exactly how a silently
+          # failed pg_dump slipped past this check before.
+          if ! gunzip -c "${{ env.BACKUP_FILENAME }}" | grep -q "PostgreSQL database dump"; then
+            echo "Error: Backup does not look like real pg_dump output"
             exit 1
           fi
           ls -lh ${{ env.BACKUP_FILENAME }}
