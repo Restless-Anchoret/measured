@@ -12,15 +12,15 @@ The original detailed plan document for this migration is unrecoverable — it l
 
 **Provider decision**: Fly Postgres (Fly's own managed Postgres, attached to the existing `measured-backend` app). This isn't a new decision — `DEPLOYMENT.md` already names this as the intended path. Keeping everything on one platform avoids adding a second vendor relationship for a single-user app.
 
-**Schema decision — keep `date` as `TEXT` in Postgres too, not native `DATE`.** Postgres does have a real `DATE` type, and it'd be reasonable to use it — but `asyncpg` returns native Postgres `DATE` columns as Python `date` objects, not strings, which would reintroduce exactly the dialect-branching complexity the schema migration just removed. Since the only operations done on `date` are string equality/range comparisons (`date >= :min_date`), which work identically as lexicographic string comparison in Postgres (ISO-8601's sort-order property isn't SQLite-specific), staying with `TEXT` means **zero application code needs to change based on which database is active** — `models.py`, `schemas.py`, and the routers stay byte-for-byte identical between SQLite and Postgres. This is a deliberate simplicity trade-off for a single-developer project; flag if you'd rather use native `DATE` and accept the small conversion shim it requires.
+**Schema decision — use Postgres's native `DATE` type for `sessions.date`.** `schemas.py` already types `SessionCreate.date` / `SessionUpdate.date` as `datetime.date`, so a native `date` object coming back from Postgres is the natural fit. `asyncpg` requires an actual `date` object bound against a `DATE` column — a plain `str` is rejected — so the write-side `.isoformat()` calls in `routers/sessions.py` (`create_session`, `update_session`, and the `min_date`/`max_date` filters in `get_sessions`) become dialect-aware: convert to `.isoformat()` only for SQLite, pass the `date` object through unchanged for Postgres. `database.py` gains a small `is_sqlite_db(db)` helper (the same `str(db.url).startswith("sqlite")` check `init_db` already does internally) to back this. The read side needs no dialect flag at all — `models.py`'s `Session.from_row` checks `isinstance(row["date"], date)`, since the value is either already a `date` object (Postgres) or a `str` (SQLite). This also means `min_date`/`max_date` filtering and `ORDER BY date` become genuine typed date comparisons enforced by the column itself, rather than relying on ISO-8601 strings happening to sort lexicographically like the dates they represent.
 
-**Test suite stays SQLite-only.** With no remaining dialect-specific data handling, there's little left for a Postgres-backed test run to catch that a SQLite-backed one wouldn't. Keeping `conftest.py`'s in-memory SQLite setup avoids needing a live Postgres instance in CI. Revisit if the two databases ever diverge in behavior that matters.
+**Test suite runs against a real Postgres via `testcontainers`, not SQLite.** `tests/conftest.py` (rewritten in [Step 2](#step-2--backend-dual-driver-support-prod-stays-on-sqlite)) starts a real `postgres:16` container via `testcontainers-python`'s `PostgresContainer`, scoped once per test *session* (container startup cost paid once, not per test), runs `init_db()` against it once to create the schema, then does a full `TRUNCATE ... RESTART IDENTITY` clean of the data tables after each test. Isolation is via cleanup, not a wrapping transaction that's rolled back — a test is free to open and commit its own separate transactions (needed for anything exercising multi-request/multi-transaction behavior) without losing isolation from the next test. This needs Docker locally, which Step 1 already assumes for the dev Postgres container; GitHub Actions runners have Docker preinstalled too. SQLite isn't exercised by the automated suite at all — any concern about that path (e.g. does `init_db`'s `is_sqlite` branch still produce a working schema) gets a manual smoke test instead — start the app with no `DATABASE_URL` set and hit a couple endpoints.
 
-**Known driver gotcha to handle**: the `databases` library (and modern SQLAlchemy, which it wraps) requires the `postgresql://` URL scheme and rejects the older `postgres://` alias. Fly's auto-generated connection strings use `postgres://`. `database.py` needs to normalize this — see Step 2.
+**Known driver gotcha, handled by convention, not code**: the `databases` library (and modern SQLAlchemy, which it wraps) requires the `postgresql://` URL scheme and rejects the older `postgres://` alias, which is what `fly postgres attach` always prints. Since `DATABASE_URL` is only ever set by hand (`fly secrets set`, see Step 1 and Step 5), the scheme is corrected to `postgresql://` at the point it's typed in — no runtime normalization in `database.py` needed.
 
 ---
 
-## Step 1 — Provision Postgres, without touching the live app yet
+## Step 1 — Provision Postgres, capture credentials
 
 **Local dev**, add `docker-compose.yml` at the repo root:
 
@@ -43,45 +43,56 @@ volumes:
 
 A developer opts into it locally by running `docker compose up -d` and setting `DATABASE_URL=postgresql://measured:measured@localhost:5432/measured` in their shell before starting uvicorn. `database.py`'s existing `os.getenv("DATABASE_URL", "sqlite:///./measured.db")` fallback means nobody is forced into this — SQLite stays the zero-setup default until Step 5.
 
-**Fly Postgres cluster** — create it, but deliberately *don't* attach it to `measured-backend` yet:
+**Fly Postgres cluster**:
 
 ```bash
-fly postgres create --name measured-db --region ams
+fly postgres create --name measured-database --region ams
 ```
 
-This stands up an independent Postgres cluster app with no connection to `measured-backend` at all. This separation is intentional: `fly postgres attach` both provisions an app-specific database/role *and* writes a `DATABASE_URL` secret to the target app, which by default triggers an immediate redeploy. Running that now — before Step 2's code exists — would hand the *currently deployed* SQLite-only code a Postgres URL it can't use (no `asyncpg` driver installed) and crash production on startup. Attachment is deferred to Step 5, once the code can actually handle it.
-
-For Step 4's migration script and any pre-cutover testing, get credentials without touching the live app's config, by attaching under a different secret name:
+Attach it right away:
 
 ```bash
-fly postgres attach --app measured-backend measured-db --variable-name STAGING_DATABASE_URL
+fly postgres attach --app measured-backend measured-database
 ```
 
-This still creates the real, dedicated `measured-backend`-scoped database and role on the cluster — it just writes the resulting connection string to `STAGING_DATABASE_URL` instead of `DATABASE_URL`, so it sits there completely inert until Step 5 explicitly promotes it. Note the `postgres://` scheme problem above applies here too — expect to rewrite it to `postgresql://` wherever it's used.
+This provisions the real, dedicated `measured-backend`-scoped database and role on the cluster, and writes the resulting connection string to the `DATABASE_URL` secret — which triggers an immediate redeploy of `measured-backend`. The currently deployed code is still SQLite-only at this point (Step 2's `asyncpg` support doesn't exist yet), so that redeploy will crash on startup. This is expected and brief.
+
+`fly postgres attach` prints the generated connection string to stdout — copy it down before it's gone (rewriting `postgres://` to `postgresql://`), since it's needed for Step 4's migration script and any pre-cutover testing.
+
+Then bring production back up by resetting `DATABASE_URL` to SQLite:
+
+```bash
+fly secrets set DATABASE_URL='sqlite:////data/measured.db'
+```
+
+This triggers another redeploy, back onto the working SQLite code. Production is down for roughly the time these two redeploys take (typically well under a minute). The captured Postgres connection string sits inert — nothing reads it — until Step 5 puts it back.
 
 ---
 
 ## Step 2 — Backend: dual-driver support, prod stays on SQLite
 
-`backend/requirements.txt` — add the Postgres driver alongside the existing one:
+`backend/requirements.txt` — add the Postgres driver, plus `testcontainers` for the new Postgres-backed test suite:
 ```
 databases[asyncpg]==0.9.0
 asyncpg==0.29.0
+testcontainers[postgres]  # pin to latest stable at implementation time
 ```
 
-`backend/app/database.py` — normalize the URL scheme and branch the one piece of DDL that actually differs between dialects (autoincrementing primary keys):
+`backend/app/database.py` — branch the DDL that differs between dialects (autoincrementing primary keys, and now `date`'s column type too), and add a small helper other modules use to know which dialect they're talking to:
 ```python
 DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./measured.db")
-if DATABASE_URL.startswith("postgres://"):
-    DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
-
 database = databases.Database(DATABASE_URL)
+
+
+def is_sqlite_db(db: databases.Database) -> bool:
+    return str(db.url).startswith("sqlite")
 
 
 async def init_db(db: databases.Database | None = None):
     target_db = db if db is not None else database
-    is_sqlite = str(target_db.url).startswith("sqlite")
+    is_sqlite = is_sqlite_db(target_db)
     pk = "INTEGER PRIMARY KEY AUTOINCREMENT" if is_sqlite else "INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY"
+    date_type = "TEXT" if is_sqlite else "DATE"
 
     await target_db.execute(f"""
         CREATE TABLE IF NOT EXISTS projects (
@@ -96,16 +107,117 @@ async def init_db(db: databases.Database | None = None):
         CREATE TABLE IF NOT EXISTS sessions (
             id {pk},
             project_id INTEGER NOT NULL,
-            date TEXT NOT NULL,
+            date {date_type} NOT NULL,
             duration_minutes INTEGER NOT NULL,
             create_time BIGINT NOT NULL,
             FOREIGN KEY (project_id) REFERENCES projects(id)
         )
     """)
-```
-This is the *only* file that needs a dialect branch. `models.py`, `schemas.py`, and every router are already dialect-agnostic — `:param`-style bind parameters are translated per-backend by the `databases` library itself, and every remaining column type (`TEXT`, `INTEGER`, `BIGINT`, `VARCHAR`) round-trips identically through both `aiosqlite` and `asyncpg`. `RETURNING` also needs no branching — it's valid syntax in both SQLite (3.35+, already required) and Postgres (where it originated).
 
-Deploy this. Since `DATABASE_URL` hasn't changed, production keeps running SQLite exactly as before — this step only proves the code *can* speak Postgres, without affecting anything live. Sanity-check locally by pointing at the Step 1 Docker Compose instance and running `pytest` plus a manual smoke test (`create_session`, `get_sessions`) against it.
+    # Dead archive table (see Step 4's original schema migration) -- not read or written by
+    # any application code, kept only in case start_time/end_time are ever needed again.
+    # In production this table was created via `CREATE TABLE ... AS SELECT` from the old
+    # sessions.start_time/end_time (declared TIMESTAMP), which SQLite's affinity rules map to
+    # NUMERIC -- but the actual values are ISO 8601 strings that don't parse as numeric
+    # literals, so they're stored as plain TEXT regardless of the column's affinity. A TEXT
+    # column here is a faithful, lossless copy; no identity/FK either, matching production.
+    await target_db.execute("""
+        CREATE TABLE IF NOT EXISTS sessions_legacy_data (
+            id INTEGER NOT NULL,
+            start_time TEXT,
+            end_time TEXT
+        )
+    """)
+```
+`GENERATED ALWAYS AS IDENTITY` is Postgres's SQL-standard replacement for the old `SERIAL` pseudo-type — still a sequence-backed auto-incrementing column under the hood, just standard syntax. `ALWAYS` rejects any `INSERT` that supplies an explicit `id` unless it's overridden (see Step 4's migration script), which is the stricter, more deliberate default.
+
+`backend/app/routers/sessions.py` — the four spots that currently call `session.date.isoformat()` / `.isoformat()` on a filter value need to skip that conversion for Postgres, since `asyncpg` rejects a plain `str` bound against a `DATE` column:
+```python
+from app.database import get_db, is_sqlite_db
+
+def adapt_date(db: databases.Database, d: date) -> "str | date":
+    return d.isoformat() if is_sqlite_db(db) else d
+```
+and replace each `session.date.isoformat()` / `min_date.isoformat()` / `max_date.isoformat()` call site with `adapt_date(db, session.date)` / `adapt_date(db, min_date)` / `adapt_date(db, max_date)`.
+
+`backend/app/models.py` — `Session.from_row` needs no dialect flag; the value is either already a `date` (Postgres) or a `str` (SQLite), so a type check covers both and is actually simpler than the current unconditional parse:
+```python
+date=row["date"] if isinstance(row["date"], date) else date.fromisoformat(row["date"])
+```
+
+`RETURNING` needs no branching — valid syntax in both SQLite (3.35+, already required) and Postgres (where it originated). Every other column type (`TEXT`, `INTEGER`, `BIGINT`, `VARCHAR`) still round-trips identically through both drivers.
+
+**`backend/tests/conftest.py` — uses a real Postgres container, not SQLite:**
+```python
+import pytest
+import databases
+from testcontainers.postgres import PostgresContainer
+from httpx import AsyncClient, ASGITransport
+
+from app.main import app
+from app.database import init_db, get_db
+
+
+@pytest.fixture(scope="session")
+def postgres_container():
+    with PostgresContainer("postgres:16") as pg:
+        yield pg
+
+
+@pytest.fixture(scope="session")
+async def postgres_url(postgres_container) -> str:
+    # driver=None gives a bare postgresql:// URL (asyncpg-compatible),
+    # not the postgresql+psycopg2:// default testcontainers builds for SQLAlchemy sync use.
+    url = postgres_container.get_connection_url(driver=None)
+    setup_db = databases.Database(url)
+    await setup_db.connect()
+    await init_db(setup_db)
+    await setup_db.disconnect()
+    return url
+
+
+@pytest.fixture(scope="function")
+async def test_db(postgres_url: str):
+    test_database = databases.Database(postgres_url)
+    await test_database.connect()
+    await seed_test_projects(test_database)
+    yield test_database
+    # Full clean, not a rolled-back transaction -- lets a test open and commit its own
+    # separate transactions without losing isolation from the next test. RESTART IDENTITY
+    # also resets the id sequences, which a rollback wouldn't have (sequence advances in
+    # Postgres are not transactional, so force_rollback would leak ids across tests).
+    await test_database.execute("TRUNCATE TABLE sessions, projects RESTART IDENTITY CASCADE")
+    await test_database.disconnect()
+
+
+async def seed_test_projects(db: databases.Database):
+    test_projects = [
+        {"name": "Work", "color": "#ff5733", "extra_color": "#c70039"},
+        {"name": "Personal", "color": "#33ff57", "extra_color": None},
+        {"name": "Learning", "color": "#3357ff", "extra_color": "#1d3a8f"},
+        {"name": "Exercise", "color": "#f3ff33", "extra_color": None},
+        {"name": "Hobbies", "color": "#ff33f3", "extra_color": "#8f1d8a"},
+    ]
+    for project in test_projects:
+        await db.execute(
+            "INSERT INTO projects (name, color, extra_color) VALUES (:name, :color, :extra_color)",
+            project,
+        )
+
+
+@pytest.fixture(scope="function")
+async def client(test_db: databases.Database):
+    async def override_get_db():
+        yield test_db
+
+    app.dependency_overrides[get_db] = override_get_db
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        yield ac
+    app.dependency_overrides.clear()
+```
+Note `INSERT OR IGNORE` (SQLite-only syntax) is dropped in favor of plain `INSERT`, since each test now gets a freshly truncated, empty table rather than a shared/reused one — the "ignore duplicates" behavior it existed for no longer applies.
+
+Deploy this. Since `DATABASE_URL` hasn't changed, production keeps running SQLite exactly as before — this step only proves the code *can* speak Postgres, without affecting anything live. `pytest` runs against a `testcontainers` Postgres instance as part of this step (this is the main verification). Separately, smoke-test the SQLite path by running the app locally with no `DATABASE_URL` set (SQLite default) and manually exercising `create_session`/`get_sessions`, since that path has no automated coverage.
 
 ---
 
@@ -142,7 +254,7 @@ jobs:
           TIMESTAMP=$(date +%Y-%m-%d)
           echo "BACKUP_FILENAME=pg-backup-${TIMESTAMP}.sql.gz" >> $GITHUB_ENV
 
-          flyctl proxy 15432:5432 -a measured-db &
+          flyctl proxy 15432:5432 -a measured-database &
           PROXY_PID=$!
           sleep 5  # wait for the tunnel to establish
 
@@ -169,9 +281,9 @@ jobs:
           compression-level: 0  # Already compressed with gzip
 ```
 
-Exact database/user names (`measured_backend`, etc.) come from whatever `fly postgres attach` actually names them — check with `fly postgres db list -a measured-db` and `fly postgres users list -a measured-db` and adjust. `POSTGRES_BACKUP_PASSWORD` is a new GitHub secret holding that role's password (visible once at attach time, or resettable via `fly postgres users create`/`fly ssh console -a measured-db` + `psql`).
+Exact database/user names (`measured_backend`, etc.) come from whatever `fly postgres attach` actually names them — check with `fly postgres db list -a measured-database` and `fly postgres users list -a measured-database` and adjust. `POSTGRES_BACKUP_PASSWORD` is a new GitHub secret holding that role's password (visible once at attach time, or resettable via `fly postgres users create`/`fly ssh console -a measured-database` + `psql`).
 
-**Verify this workflow end-to-end against the Step 1 staging database before Step 5's cutover** — trigger it manually (`workflow_dispatch`), confirm a real, restorable dump comes out, before any production data actually depends on it existing.
+**Verify this workflow end-to-end before Step 5's cutover** — trigger it manually (`workflow_dispatch`) against the live `measured-database` cluster, confirm a real, restorable dump comes out, before any production data actually depends on it existing.
 
 Keep the existing SQLite backup workflow running unmodified through Step 5 — production is still SQLite until then.
 
@@ -179,7 +291,7 @@ Keep the existing SQLite backup workflow running unmodified through Step 5 — p
 
 ## Step 4 — One-time data migration: copy existing SQLite data into Postgres
 
-A one-off Python script, `backend/app/sessions-migration/migrate_to_postgres.py` (matching this repo's existing convention of keeping one-time migration scripts in that folder), run manually, once, against a fresh copy of the production SQLite file and the Step 1 staging Postgres database:
+A one-off Python script, `backend/app/sessions-migration/migrate_to_postgres.py` (matching this repo's existing convention of keeping one-time migration scripts in that folder), run manually, once, against a fresh copy of the production SQLite file and the Postgres cluster, using the connection string captured during Step 1's attach:
 
 ```python
 #!/usr/bin/env python3
@@ -187,9 +299,10 @@ A one-off Python script, `backend/app/sessions-migration/migrate_to_postgres.py`
 import sqlite3
 import asyncio
 import asyncpg
+from datetime import date
 
 SQLITE_PATH = "measured.db"  # a local copy of the prod backup, not the live file
-POSTGRES_URL = "postgresql://..."  # the STAGING_DATABASE_URL value from Step 1, postgresql:// scheme
+POSTGRES_URL = "postgresql://..."  # the connection string captured during Step 1's attach
 
 
 async def migrate():
@@ -217,12 +330,26 @@ async def migrate():
                 INSERT INTO sessions (id, project_id, date, duration_minutes, create_time)
                 OVERRIDING SYSTEM VALUE VALUES ($1, $2, $3, $4, $5)
                 """,
-                s["id"], s["project_id"], s["date"], s["duration_minutes"], s["create_time"],
+                # sessions.date is a native DATE column in Postgres (see Step 2) -- asyncpg
+                # rejects a plain str here, so parse the SQLite TEXT value into a date object first.
+                s["id"], s["project_id"], date.fromisoformat(s["date"]), s["duration_minutes"], s["create_time"],
             )
 
-        # Both tables use GENERATED ALWAYS AS IDENTITY - the backing sequence doesn't know
-        # about these explicitly-inserted ids yet. Advance it past the max, or the next
-        # real INSERT (no explicit id) will collide.
+        # Dead archive table, not used by the app -- copied for completeness, faithfully as-is.
+        # No identity column here, so no OVERRIDING SYSTEM VALUE needed for this one.
+        legacy = sqlite_conn.execute(
+            "SELECT id, start_time, end_time FROM sessions_legacy_data ORDER BY id"
+        ).fetchall()
+        for row in legacy:
+            await pg_conn.execute(
+                "INSERT INTO sessions_legacy_data (id, start_time, end_time) VALUES ($1, $2, $3)",
+                row["id"], row["start_time"], row["end_time"],
+            )
+
+        # projects/sessions use GENERATED ALWAYS AS IDENTITY - the backing sequence doesn't
+        # know about these explicitly-inserted ids yet. Advance it past the max, or the next
+        # real INSERT (no explicit id) will collide. sessions_legacy_data has no identity column,
+        # so it needs no equivalent step.
         await pg_conn.execute(
             "SELECT setval(pg_get_serial_sequence('projects', 'id'), (SELECT MAX(id) FROM projects))"
         )
@@ -230,7 +357,7 @@ async def migrate():
             "SELECT setval(pg_get_serial_sequence('sessions', 'id'), (SELECT MAX(id) FROM sessions))"
         )
 
-        print(f"Migrated {len(projects)} projects, {len(sessions)} sessions.")
+        print(f"Migrated {len(projects)} projects, {len(sessions)} sessions, {len(legacy)} legacy rows.")
     finally:
         sqlite_conn.close()
         await pg_conn.close()
@@ -241,19 +368,20 @@ if __name__ == "__main__":
 ```
 
 Two Postgres-specific details worth calling out, both load-bearing:
-- **`OVERRIDING SYSTEM VALUE`** — required because these columns are `GENERATED ALWAYS AS IDENTITY`. Without it, Postgres flatly rejects any `INSERT` that supplies an explicit `id` for such a column. (`GENERATED BY DEFAULT AS IDENTITY` wouldn't need this, but Step 2 already committed to `ALWAYS`, matching the earlier reverted attempt's choice.)
+- **`OVERRIDING SYSTEM VALUE`** — required because `projects`/`sessions` are `GENERATED ALWAYS AS IDENTITY`. Without it, Postgres flatly rejects any `INSERT` that supplies an explicit `id` for such a column.
 - **`pg_get_serial_sequence(...)`** — the robust way to find an identity column's backing sequence name, rather than guessing/hardcoding it (e.g. `projects_id_seq`). This is the same category of lesson as the `sqlite_sequence` gotcha encountered during the earlier SQLite schema migration (Step 1 of that plan) — an autoincrement mechanism has separate bookkeeping state that explicit-id inserts can silently leave stale.
 
-Migration order matters — `projects` before `sessions`, for the foreign key.
+Migration order matters — `projects` before `sessions`, for the foreign key. `sessions_legacy_data` has no dependency on either and can go any time.
 
 **Verify after running:**
 ```sql
 SELECT COUNT(*) FROM projects;  -- compare to SQLite's count
 SELECT COUNT(*) FROM sessions;  -- compare to SQLite's count
+SELECT COUNT(*) FROM sessions_legacy_data;  -- compare to SQLite's count
 SELECT seq FROM ... -- N/A in Postgres; instead:
 SELECT last_value FROM pg_sequences WHERE sequencename = 'sessions_id_seq';  -- or whatever pg_get_serial_sequence returned
 ```
-Then do one real end-to-end check: `POST /api/sessions` against the app running with `DATABASE_URL` pointed at staging Postgres, confirm the new row gets an `id` one past the migrated max, not a collision.
+Then do one real end-to-end check: run the app locally with `DATABASE_URL` set to the captured Postgres connection string, `POST /api/sessions`, confirm the new row gets an `id` one past the migrated max, not a collision.
 
 This step can be re-run from scratch as many times as needed before cutover (just drop and recreate the Postgres tables via `init_db()` and re-run the script) — nothing here is destructive to the SQLite source.
 
@@ -261,15 +389,15 @@ This step can be re-run from scratch as many times as needed before cutover (jus
 
 ## Step 5 — Cutover: point production at Postgres
 
-This is the actual switch, and the moment `fly postgres attach` (the real one, writing to `DATABASE_URL`) happens:
+This is the actual switch: set `DATABASE_URL` back to the real Postgres connection string captured during Step 1's attach. The database and role already exist on the cluster, so there's no need to run `fly postgres attach` again:
 
 ```bash
-fly postgres attach --app measured-backend measured-db
+fly secrets set DATABASE_URL='postgresql://...'   # the connection string captured in Step 1
 ```
 
 Before running it:
-- Re-run Step 4's migration one final time against a *fresh* backup taken immediately before cutover, so no sessions logged between the staging copy and now are lost.
-- Remove the plaintext `DATABASE_URL = 'sqlite:////data/measured.db'` line from `fly.toml`'s `[env]` block — `fly deploy` has been printing a warning about this exact thing on every deploy this whole project ("`DATABASE_URL` may be a potentially sensitive environment variable... remove it from the `[env]` section"). A real Postgres connection string with embedded credentials genuinely shouldn't sit in a committed, plaintext config file; `fly secrets` is the correct place for it, and `attach` writes there automatically.
+- Re-run Step 4's migration one final time against a *fresh* backup taken immediately before cutover, so no sessions logged since the earlier test migration are lost.
+- Remove the plaintext `DATABASE_URL = 'sqlite:////data/measured.db'` line from `fly.toml`'s `[env]` block — `fly deploy` has been printing a warning about this exact thing on every deploy this whole project ("`DATABASE_URL` may be a potentially sensitive environment variable... remove it from the `[env]` section"). A real Postgres connection string with embedded credentials genuinely shouldn't sit in a committed, plaintext config file; `fly secrets` is the correct place for it.
 
 Then `fly deploy` to roll out the `fly.toml` change, and verify: `fly status`, `/api/health`, then a real read (`GET /api/sessions`) and a real write (`POST /api/sessions`, then delete it) against production.
 
@@ -281,9 +409,9 @@ Then `fly deploy` to roll out the `fly.toml` change, and verify: `fly status`, `
 
 Once Postgres is confirmed stable in production and there's no intention of rolling back:
 
-- `backend/app/database.py`: remove the `is_sqlite` branch and the `postgres://` → `postgresql://` rewrite's SQLite half — collapse to Postgres-only DDL (`INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY` unconditionally).
+- `backend/app/database.py`: remove the `is_sqlite` branch — collapse to Postgres-only DDL (`INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY`, `date DATE`, unconditionally; `sessions_legacy_data` is already dialect-identical, so it's untouched). Also collapse `routers/sessions.py`'s `adapt_date()` helper — no longer needed once every dialect is Postgres, so its call sites go back to just `session.date` / `min_date` / `max_date` directly.
 - `backend/requirements.txt`: remove `databases[aiosqlite]==0.9.0`.
-- `backend/tests/conftest.py`: this currently sets up an in-memory SQLite database per test. Decide here whether to point it at a real (local/CI) Postgres instance instead, or keep a SQLite-only test path indefinitely by *not* fully removing the `aiosqlite` extra from a dev-only dependency group. This is a genuine open decision deferred from Step 2's "tests stay SQLite" call — revisit once Postgres has been live long enough to know whether any behavior actually diverged.
+- `backend/tests/conftest.py`: nothing to do here — it's already Postgres-only via `testcontainers` since Step 2, so there's no lingering SQLite test path to retire.
 
 ---
 
@@ -292,12 +420,11 @@ Once Postgres is confirmed stable in production and there's no intention of roll
 - `backend/Dockerfile`: remove the `sqlite3` CLI installation (`RUN apt-get install ... sqlite3`) — no longer needed once nothing on the production machine touches a `.sqlite` file.
 - `fly volumes list -a measured-backend` → once confident no rollback will ever be needed, `fly volume destroy measured_data`. Not urgent — an idle unused volume costs little and is a free rollback safety net; no rush to remove it.
 - Retire `.github/workflows/backup-database.yml` (the SQLite one) — either delete it or leave it disabled, since there's no longer a SQLite file in production for it to back up.
-- `fly secrets unset STAGING_DATABASE_URL` (from Step 1) — no longer needed once `DATABASE_URL` itself is the real thing.
 - Update `backend/DEPLOYMENT.md`: its current "Migration to PostgreSQL (Optional)" section describes this as a hypothetical future option — rewrite it to describe the actual setup as it now exists, and fold in the real backup/restore instructions for `pg_dump`/`pg_restore` (mirroring the existing detailed SQLite restore walkthrough there).
-- `CLAUDE.md`'s "Database" section describes `measured.db` as the dev/prod database — update to reflect Postgres in prod, Docker Compose Postgres (or SQLite fallback) for dev.
+- `CLAUDE.md`'s "Database" section describes `measured.db` as the dev/prod database — update to reflect Postgres in prod, Docker Compose Postgres (or SQLite fallback) for dev. Its "Testing" section also still says `conftest.py` sets up an in-memory SQLite database per test — that's been wrong since Step 2; update it to describe the `testcontainers`-backed Postgres setup, with tables truncated after each test.
 
 ---
 
 ## Key invariant
 
-At no point does production stop working. Steps 1–4 touch only new, inert infrastructure (a separate Postgres cluster, a `STAGING_DATABASE_URL` secret nothing reads, a new backup workflow, a script run against copies) — the live app keeps running unmodified SQLite-backed code throughout. Step 5 is the single moment of actual change, and it's reversible for as long as the SQLite volume is kept around. Steps 6–7 only remove now-unused code and infrastructure, and only after Postgres has proven itself in production.
+Production stays on SQLite throughout, with one brief, deliberate exception: Step 1's attach-then-reset causes a short crash-and-recover blip while `DATABASE_URL` briefly points at Postgres before any code exists to use it — over in the time two redeploys take, and immediately reverted. Everything else in Steps 1–4 is new, inert infrastructure (the Postgres cluster itself, a captured-but-unused connection string, a new backup workflow, a migration script run against copies) that doesn't touch the live app. Step 5 is the real cutover, and it's reversible for as long as the SQLite volume is kept around. Steps 6–7 only remove now-unused code and infrastructure, and only after Postgres has proven itself in production.
