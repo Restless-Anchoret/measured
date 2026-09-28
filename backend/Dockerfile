@@ -19,11 +19,6 @@ FROM python:3.12-slim
 # Set working directory
 WORKDIR /app
 
-# Install sqlite3 CLI tool
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    sqlite3 \
-    && rm -rf /var/lib/apt/lists/*
-
 # Copy Python dependencies from builder
 COPY --from=builder /root/.local /root/.local
 
@@ -35,12 +30,6 @@ COPY . .
 
 # Make sure scripts in .local are usable
 ENV PATH=/root/.local/bin:$PATH
-
-# Create directory for database (will be mounted as volume in production)
-RUN mkdir -p /data
-
-# Set environment variable for production database path
-ENV DATABASE_URL=sqlite:////data/measured.db
 
 # Expose port 8080 (Fly.io default)
 EXPOSE 8080

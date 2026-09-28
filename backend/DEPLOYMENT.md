@@ -46,20 +46,18 @@ fly launch --no-deploy
 When prompted:
 - Choose a unique app name (or use the one in fly.toml)
 - Select your preferred region
-- Skip setting up PostgreSQL (we're using SQLite)
 - Skip deploying immediately
 
-### Step 3: Create Persistent Volume
+### Step 3: Provision PostgreSQL
 
-Create a persistent volume for the SQLite database:
+Create a Fly Postgres cluster and attach it to your app:
 
 ```bash
-fly volumes create measured_data --size 1 --region ams
+fly postgres create --name <your-db-name> --region ams
+fly postgres attach --app <your-app-name> <your-db-name>
 ```
 
-Replace `ams` with your chosen region. The volume name `measured_data` matches the mount source in `fly.toml`.
-
-**Important**: Volumes are region-specific and tied to a single machine. For production at scale, consider PostgreSQL instead.
+This provisions the database/role and writes the resulting connection string to the `DATABASE_URL` secret. `database.py` requires `DATABASE_URL` to be set at startup — there's no fallback default.
 
 ### Step 4: Deploy the Application
 
@@ -148,95 +146,7 @@ fly secrets unset MY_SECRET
 
 ### Database Management
 
-#### Automated Backups
-
-The production database is automatically backed up **daily at 2 AM UTC** using GitHub Actions. Backups are:
-- Stored as GitHub Artifacts with **30-day retention**
-- Compressed with gzip (~90% size reduction)
-- Named with timestamps (e.g., `backup-2026-02-07.sql.gz`)
-
-**Setup Requirements:**
-
-Before automated backups will work, you must configure the Fly.io API token:
-
-1. Generate a Fly.io API token:
-   ```bash
-   fly auth token
-   ```
-
-2. Add it as a GitHub repository secret:
-   - Go to your GitHub repository → Settings → Secrets and variables → Actions
-   - Click "New repository secret"
-   - Name: `FLY_API_TOKEN`
-   - Value: Paste the token from step 1
-   - Click "Add secret"
-
-**Manual Backup Trigger:**
-
-You can trigger a backup manually at any time:
-1. Go to your GitHub repository → Actions tab
-2. Select "Backup Database" workflow
-3. Click "Run workflow" → "Run workflow"
-
-#### Restore Database from Backup
-
-To restore a database from a backup:
-
-1. **Download the backup:**
-   - Go to GitHub repository → Actions → "Backup Database"
-   - Select a successful workflow run
-   - Download the backup artifact (e.g., `backup-2026-02-07.sql.gz`)
-   - Extract it: `gunzip backup-2026-02-07.sql.gz`
-
-2. **Restore locally (for testing):**
-   ```bash
-   # Delete the old database and create fresh one from backup
-   rm -f measured.db
-   sqlite3 measured.db < backup-2026-02-07.sql
-   ```
-
-3. **Restore to production:**
-   ```bash
-   # Upload the backup to Fly.io
-   fly ssh sftp shell
-   put backup-2026-02-07.sql /data/backup.sql
-   exit
-   
-   # Restore the database (replaces existing database)
-   fly ssh console
-   cd /data
-   
-   # IMPORTANT: Backup current database first!
-   cp measured.db measured.db.before-restore-$(date +%Y%m%d-%H%M%S)
-   
-   # Delete old database and restore from backup
-   rm -f measured.db
-   sqlite3 measured.db < backup.sql
-   
-   # Verify the restore was successful
-   sqlite3 measured.db "SELECT COUNT(*) FROM projects; SELECT COUNT(*) FROM sessions;"
-   
-   exit
-   ```
-   
-   **⚠️ Important Notes:**
-   - The SQL dump contains `CREATE TABLE` statements, so it must be applied to a **fresh/empty database**
-   - Always backup the current database before restoring (as shown above)
-   - If something goes wrong, you can restore from `measured.db.before-restore-*` files
-
-#### Manual Backup (Alternative)
-
-If you need to create a backup outside of the automated schedule:
-
-```bash
-# Create and download a compressed backup
-fly ssh console --app measured-backend --command "sh -c 'sqlite3 /data/measured.db .dump > /data/backup.sql && gzip -f /data/backup.sql'"
-fly ssh sftp get --app measured-backend /data/backup.sql.gz ./backup.sql.gz
-
-# Or for an uncompressed backup:
-fly ssh console --app measured-backend --command "sqlite3 /data/measured.db .dump > /data/backup.sql"
-fly ssh sftp get --app measured-backend /data/backup.sql ./backup.sql
-```
+The production database is PostgreSQL, running as a Fly Postgres cluster (`measured-database`) attached to `measured-backend` via a `DATABASE_URL` secret. See the "PostgreSQL Database" section below for connection details, backups, and restore instructions.
 
 ## Monitoring
 
@@ -281,10 +191,15 @@ fly logs
 
 ### Database Connection Issues
 
-Verify volume is mounted:
+Verify `DATABASE_URL` is set:
 ```bash
-fly ssh console
-ls -la /data
+fly secrets list -a measured-backend
+```
+
+Test connectivity to the Postgres cluster directly (see "Connecting from a Local Machine" under PostgreSQL Database below):
+```bash
+fly proxy 15432:5432 -a measured-database
+psql "postgresql://measured_backend:<password>@localhost:15432/measured_backend" -c "SELECT 1;"
 ```
 
 ### Health Check Failing
@@ -317,20 +232,13 @@ Follow the instructions to add DNS records.
 
 ### Multiple Regions
 
-To deploy to multiple regions, you'll need:
-1. A volume in each region
-2. A machine in each region
-3. Consider PostgreSQL for multi-region databases
+To deploy the app machine to multiple regions:
 
 ```bash
-# Add a volume in another region
-fly volumes create measured_data --size 1 --region lhr
-
-# Add a machine in that region
 fly machine clone --region lhr
 ```
 
-**Note**: SQLite doesn't support multi-region replication. For multi-region deployments, migrate to PostgreSQL.
+For multi-region database access, look at Fly Postgres's own replica support (`fly postgres create` supports adding read replicas in other regions to an existing cluster).
 
 ### CORS Configuration
 
@@ -346,31 +254,71 @@ app.add_middleware(
 )
 ```
 
-## Migration to PostgreSQL (Optional)
+## PostgreSQL Database
 
-If you need better scalability or multi-region support:
+Production runs on a Fly Postgres cluster, `measured-database`, attached to `measured-backend`. The `DATABASE_URL` secret (never committed, holding embedded credentials) points at it; the app fails fast at startup if it's unset.
 
-1. Create a PostgreSQL database:
+### Connecting from a Local Machine
+
+`measured-database.flycast` (the cluster's internal hostname) is only resolvable from inside Fly's private network. To reach it from your own machine, open a tunnel first:
+
+```bash
+fly proxy 15432:5432 -a measured-database
+```
+
+Then connect to `localhost:15432` with the app's DB credentials, e.g.:
+
+```bash
+psql "postgresql://measured_backend:<password>@localhost:15432/measured_backend"
+```
+
+### Automated Backups
+
+The production database is automatically backed up **daily at 2 AM UTC** using GitHub Actions (`.github/workflows/backup-postgres-database.yml`). It tunnels into `measured-database` the same way, runs `pg_dump` (via a `postgres:18` container, matching the cluster's server version — a mismatched client version makes `pg_dump` refuse to run), and uploads the gzipped result. Backups are:
+- Stored as GitHub Artifacts with **30-day retention**
+- Compressed with gzip
+- Named with timestamps (e.g., `pg-backup-2026-09-28.sql.gz`)
+
+**Setup Requirements:** the workflow needs two GitHub repository secrets (Settings → Secrets and variables → Actions):
+- `FLY_API_TOKEN` — generate via `fly auth token`
+- `POSTGRES_BACKUP_PASSWORD` — the `measured_backend` role's password
+
+**Manual Backup Trigger:** Actions tab → "Backup Postgres Database" workflow → "Run workflow".
+
+### Restore Database from Backup
+
+1. **Download the backup:**
+   - Go to GitHub repository → Actions → "Backup Postgres Database"
+   - Select a successful workflow run
+   - Download the backup artifact (e.g., `pg-backup-2026-09-28.sql.gz`)
+   - Extract it: `gunzip pg-backup-2026-09-28.sql.gz`
+
+2. **Restore locally (for testing), against the Docker Compose Postgres:**
    ```bash
-   fly postgres create
+   docker compose up -d
+   psql "postgresql://measured:measured@localhost:5432/measured" < pg-backup-2026-09-28.sql
    ```
 
-2. Attach it to your app:
+3. **Restore to production**, via the same tunnel used to connect:
    ```bash
-   fly postgres attach <postgres-app-name>
+   fly proxy 15432:5432 -a measured-database
+
+   # IMPORTANT: back up the current state first (see Manual Backup Trigger above,
+   # or run pg_dump directly against localhost:15432 as in "Connecting from a Local
+   # Machine" above) before restoring over it.
+
+   psql "postgresql://measured_backend:<password>@localhost:15432/measured_backend" \
+       < pg-backup-2026-09-28.sql
+
+   # Verify the restore was successful
+   psql "postgresql://measured_backend:<password>@localhost:15432/measured_backend" \
+       -c "SELECT COUNT(*) FROM projects; SELECT COUNT(*) FROM sessions;"
    ```
 
-3. Update `requirements.txt`:
-   ```
-   databases[asyncpg]==0.9.0  # Instead of aiosqlite
-   ```
-
-4. The DATABASE_URL will be automatically set by Fly.io
-
-5. Redeploy:
-   ```bash
-   fly deploy
-   ```
+   **⚠️ Important Notes:**
+   - The dump contains `CREATE TABLE` statements, so restoring into a database that already has these tables will error — drop them first if you're restoring over existing data
+   - Always back up the current state before restoring
+   - `pg_dump`/`psql` version must be able to talk to the cluster's Postgres 18 server — use a matching client (e.g. `docker run --rm --network host -e PGPASSWORD=... postgres:18 psql ...`) if your local `psql` is older
 
 ## Support
 

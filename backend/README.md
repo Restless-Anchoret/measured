@@ -63,5 +63,5 @@ The test suite uses a separate test database (automatically created and cleaned 
 
 ## Database
 
-The application uses SQLite by default (stored in `measured.db`). For production, you can set the `DATABASE_URL` environment variable to use a different database.
+The application uses PostgreSQL. Set the `DATABASE_URL` environment variable to point at your database — there's no default, so the app fails fast at startup if it's unset. For local dev, see `docker-compose.yml` at the repo root.
 

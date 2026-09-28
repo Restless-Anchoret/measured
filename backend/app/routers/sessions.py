@@ -26,7 +26,7 @@ async def create_session(
     now = datetime.now(timezone.utc)
     create_time = (now - datetime(1970, 1, 1, tzinfo=timezone.utc)) // timedelta(milliseconds=1)
 
-    # Create session using RETURNING clause (SQLite 3.35+)
+    # Create session using RETURNING clause
     row = await db.fetch_one(
         """
         INSERT INTO sessions (project_id, date, duration_minutes, create_time)

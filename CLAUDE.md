@@ -7,7 +7,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 **Measured** is a personal time tracking app. Users log sessions (with a project and duration), view history, and analyze activity via charts.
 
 - **Frontend**: React 19 + TypeScript + Vite + React Router + Tailwind CSS + shadcn/ui
-- **Backend**: FastAPI (Python 3.12) + async SQLite via `databases` / `aiosqlite`
+- **Backend**: FastAPI (Python 3.12) + async PostgreSQL via `databases` / `asyncpg`
 - **Deployment**: Vercel (frontend) + Fly.io (backend)
 
 ## Commands
@@ -50,7 +50,7 @@ Sessions store absolute start/end timestamps. Duration is computed from the diff
 - `schemas.py` — Pydantic models for API request/response
 - `routers/` — `health.py`, `projects.py`, `sessions.py`
 
-Uses raw parameterized SQL (no ORM). Uses SQLite `RETURNING` clause (requires SQLite 3.35+). FastAPI `Depends()` injects the DB connection.
+Uses raw parameterized SQL (no ORM). Uses Postgres's `RETURNING` clause. FastAPI `Depends()` injects the DB connection.
 
 API base: `/api/`
 - `GET /api/projects`
@@ -67,10 +67,12 @@ API base: `/api/`
 Frontend reads `VITE_API_URL` for the backend URL.
 
 ### Testing
-Backend tests use pytest with `asyncio_mode = auto` (see `pytest.ini`). `conftest.py` sets up an in-memory SQLite test database for each test.
+Backend tests use pytest with `asyncio_mode = auto` (see `pytest.ini`). `conftest.py` starts a real Postgres via `testcontainers`, scoped once per test session; each test gets a fresh schema (`init_db()` recreates it, dropped again after the test runs).
 
 ### Database
-- Dev: `measured.db` (local file)
-- Production: mounted Fly.io volume at `/data/measured.db`
-- Daily backups via GitHub Actions (`.github/workflows/backup-database.yml`)
+- Dev: Docker Compose Postgres (`docker compose up -d`, then `DATABASE_URL=postgresql://measured:measured@localhost:5432/measured`)
+- Production: Fly Postgres cluster `measured-database`, attached to `measured-backend` via a `DATABASE_URL` secret
+- `DATABASE_URL` has no default — the app fails fast at startup if it's unset
+- To reach the production database from a local machine (it's only resolvable inside Fly's private network): `fly proxy 15432:5432 -a measured-database`, then connect to `localhost:15432` with the app's DB credentials
+- Daily backups via GitHub Actions (`.github/workflows/backup-postgres-database.yml`)
 - Seed data and schema in `sql/`

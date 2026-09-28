@@ -13,8 +13,6 @@ __pycache__/
 
 # Local database files
 *.db
-*.sqlite
-*.sqlite3
 measured.db
 
 # Testing
