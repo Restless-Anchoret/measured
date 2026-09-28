@@ -305,14 +305,51 @@ A one-off Python script, `backend/app/sessions-migration/migrate_to_postgres.py`
 
 ```python
 #!/usr/bin/env python3
-"""One-time copy of projects/sessions from SQLite into PostgreSQL."""
+"""One-time copy of projects/sessions from SQLite into PostgreSQL.
+
+Configure via environment variables before running -- never hardcode real
+credentials into this file, since it's committed to the repo:
+    SQLITE_PATH   path to a local copy of the production SQLite file (not the live file)
+    POSTGRES_URL  postgresql:// connection string for the target Postgres database
+"""
+import os
 import sqlite3
 import asyncio
 import asyncpg
 from datetime import date
 
-SQLITE_PATH = "measured.db"  # a local copy of the prod backup, not the live file
-POSTGRES_URL = "postgresql://..."  # the connection string captured during Step 1's attach
+SQLITE_PATH = os.environ["SQLITE_PATH"]
+POSTGRES_URL = os.environ["POSTGRES_URL"]
+
+
+async def create_schema(pg_conn: asyncpg.Connection):
+    """Mirrors database.py's init_db() Postgres branch -- fly postgres attach only
+    provisions the database/role, it never runs the app's schema-creation DDL."""
+    await pg_conn.execute("""
+        CREATE TABLE IF NOT EXISTS projects (
+            id INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+            name TEXT NOT NULL UNIQUE,
+            color VARCHAR(7) NOT NULL,
+            extra_color VARCHAR(7)
+        )
+    """)
+    await pg_conn.execute("""
+        CREATE TABLE IF NOT EXISTS sessions (
+            id INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+            project_id INTEGER NOT NULL,
+            date DATE NOT NULL,
+            duration_minutes INTEGER NOT NULL,
+            create_time BIGINT NOT NULL,
+            FOREIGN KEY (project_id) REFERENCES projects(id)
+        )
+    """)
+    await pg_conn.execute("""
+        CREATE TABLE IF NOT EXISTS sessions_legacy_data (
+            id INTEGER NOT NULL,
+            start_time TEXT,
+            end_time TEXT
+        )
+    """)
 
 
 async def migrate():
@@ -321,6 +358,8 @@ async def migrate():
     pg_conn = await asyncpg.connect(POSTGRES_URL)
 
     try:
+        await create_schema(pg_conn)
+
         projects = sqlite_conn.execute("SELECT id, name, color, extra_color FROM projects ORDER BY id").fetchall()
         for p in projects:
             await pg_conn.execute(
