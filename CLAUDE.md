@@ -4,75 +4,34 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-**Measured** is a personal time tracking app. Users log sessions (with a project and duration), view history, and analyze activity via charts.
+**Measured** is a personal time tracking app. Users log sessions (a project, a date, and a duration), view history, and analyze activity via charts.
 
-- **Frontend**: React 19 + TypeScript + Vite + React Router + Tailwind CSS + shadcn/ui
-- **Backend**: FastAPI (Python 3.12) + async PostgreSQL via `databases` / `asyncpg`
-- **Deployment**: Vercel (frontend) + Fly.io (backend)
+The service has three parts, each with its own `CLAUDE.md` for stack, commands, and structure:
+- [backend/CLAUDE.md](backend/CLAUDE.md) — current production backend (Python/FastAPI)
+- [backend-kotlin/CLAUDE.md](backend-kotlin/CLAUDE.md) — new backend under development (Kotlin), intended to replace `backend/`
+- [frontend/CLAUDE.md](frontend/CLAUDE.md) — React frontend
 
-## Commands
+## Deployment
 
-### Frontend (`frontend/`)
-```bash
-npm run dev       # dev server on port 5173
-npm run build     # TypeScript check + Vite build
-npm run lint      # ESLint
-```
+- Frontend → Vercel, auto-deployed from `main`
+- Backend (Python) → Fly.io (`measured-backend` app) + Fly Postgres (`measured-database`)
+- Backend (Kotlin) → not yet deployed
 
-### Backend (`backend/`)
-```bash
-uvicorn app.main:app --reload   # dev server on port 8000
-pytest                          # all tests
-pytest tests/test_sessions.py   # single file
-pytest tests/test_sessions.py::test_create_session  # single test
-```
+## Data Model
 
-### Deployment
-```bash
-fly deploy    # deploy backend
-fly logs      # production logs
-```
+The shared contract any backend implementation must honor:
 
-## Architecture
-
-### Data Model
 ```sql
 projects (id, name, color VARCHAR(7), extra_color VARCHAR(7))
-sessions (id, project_id, start_time TIMESTAMP, end_time TIMESTAMP, created_at TIMESTAMP)
+sessions (id, project_id, date DATE, duration_minutes INTEGER, create_time BIGINT)
 ```
 
-Sessions store absolute start/end timestamps. Duration is computed from the difference. The "Log Session" UI works retroactively — user inputs a duration and the backend stores `now - duration` as `start_time`.
+Sessions store a calendar `date` and a `duration_minutes` directly — not absolute start/end timestamps. `create_time` is an epoch-millisecond audit timestamp (when the row was created), used only for ordering, not for duration math. A dead `sessions_legacy_data` table (old `start_time`/`end_time` text values) still exists from a prior schema but is never read or written by application code.
 
-### Backend (`backend/app/`)
-- `main.py` — FastAPI app, CORS allowlist, lifespan (DB connect/disconnect), custom 400 handler for validation errors
-- `database.py` — async DB connection pool, schema init
-- `models.py` — Python dataclasses for DB row mapping
-- `schemas.py` — Pydantic models for API request/response
-- `routers/` — `health.py`, `projects.py`, `sessions.py`
+## Repository Layout
 
-Uses raw parameterized SQL (no ORM). Uses Postgres's `RETURNING` clause. FastAPI `Depends()` injects the DB connection.
-
-API base: `/api/`
-- `GET /api/projects`
-- `POST /api/sessions`, `GET /api/sessions` (paginated, filterable by date range + project IDs), `GET/PUT/DELETE /api/sessions/{id}`
-
-### Frontend (`frontend/src/`)
-- `pages/` — `LogSession`, `Sessions`, `Projects`, `Charts`
-- `components/` — `Layout` (responsive sidebar), `DateIntervalChooser`, `ProjectFilterSelect`, `SessionsChart`, shadcn/ui components in `ui/`
-- `hooks/` — `useProjects`, `useSessions` (fetch with loading/error states, abort signal cleanup)
-- `lib/` — shared TypeScript types, formatting utilities, project filtering/sorting
-
-`@/` is the path alias for `src/`.
-
-Frontend reads `VITE_API_URL` for the backend URL.
-
-### Testing
-Backend tests use pytest with `asyncio_mode = auto` (see `pytest.ini`). `conftest.py` starts a real Postgres via `testcontainers`, scoped once per test session; each test gets a fresh schema (`init_db()` recreates it, dropped again after the test runs).
-
-### Database
-- Dev: Docker Compose Postgres (`docker compose up -d`, then `DATABASE_URL=postgresql://measured:measured@localhost:5432/measured`)
-- Production: Fly Postgres cluster `measured-database`, attached to `measured-backend` via a `DATABASE_URL` secret
-- `DATABASE_URL` has no default — the app fails fast at startup if it's unset
-- To reach the production database from a local machine (it's only resolvable inside Fly's private network): `fly proxy 15432:5432 -a measured-database`, then connect to `localhost:15432` with the app's DB credentials
-- Daily backups via GitHub Actions (`.github/workflows/backup-postgres-database.yml`)
-- Seed data and schema in `sql/`
+- `backend/` — Python/FastAPI backend (current production)
+- `backend-kotlin/` — Kotlin backend (in development)
+- `frontend/` — React frontend
+- `docker-compose.yml` — local Postgres for dev
+- `.github/workflows/` — CI, daily production DB backup
