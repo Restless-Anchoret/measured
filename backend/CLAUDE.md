@@ -20,7 +20,7 @@ pytest tests/test_sessions.py::test_create_session  # single test
 - `database.py` — async DB connection pool, schema init (`init_db`)
 - `models.py` — dataclasses for DB row mapping
 - `schemas.py` — Pydantic request/response models
-- `routers/` — `health.py`, `projects.py`, `sessions.py`
+- `routers/` — `health.py`, `projects.py`, `sessions.py`, `session_stats.py` (`/sessions/stats`; also holds the project display order)
 - `sessions-migration/` — one-time SQLite→Postgres migration scripts (historical, not used at runtime)
 
 FastAPI `Depends()` injects the DB connection. Uses Postgres's `RETURNING` clause on inserts/updates.
@@ -29,6 +29,7 @@ FastAPI `Depends()` injects the DB connection. Uses Postgres's `RETURNING` claus
 - `GET /api/health`
 - `GET /api/projects` (optional `?sort=MOST_RECENTLY_USED`), `POST /api/projects`
 - `POST /api/sessions`, `GET /api/sessions` (paginated, filterable by `min_date`/`max_date` and one or more `project_id`), `GET/PUT/DELETE /api/sessions/{id}`
+- `GET /api/sessions/stats` (`from_date` inclusive, `to_date` exclusive, `aggregation_by=day|week|month`, optional repeated `project_id`) — per-segment, per-project minute totals aggregated in SQL; weeks start Monday
 
 ## Testing
 

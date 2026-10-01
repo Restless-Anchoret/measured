@@ -52,3 +52,21 @@ class PaginatedSessions(BaseModel):
     page: int
     page_size: int
 
+
+
+class StatsProjectDuration(BaseModel):
+    project_id: int
+    duration_minutes: int
+
+
+class StatsSegment(BaseModel):
+    start: date_type  # inclusive
+    end: date_type  # exclusive
+    total_minutes: int
+    projects: list[StatsProjectDuration]  # ordered by the backend's project display order
+
+
+class SessionStats(BaseModel):
+    segments: list[StatsSegment]
+    total_minutes: int
+    session_count: int

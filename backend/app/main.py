@@ -5,7 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from app.database import init_db, database
-from app.routers import projects, sessions, health
+from app.routers import projects, sessions, session_stats, health
 
 
 @asynccontextmanager
@@ -46,5 +46,7 @@ app.add_middleware(
 # Include routers
 app.include_router(health.router, prefix="/api", tags=["health"])
 app.include_router(projects.router, prefix="/api", tags=["projects"])
+# session_stats must be registered before sessions so /sessions/stats is not matched by /sessions/{session_id}
+app.include_router(session_stats.router, prefix="/api", tags=["sessions"])
 app.include_router(sessions.router, prefix="/api", tags=["sessions"])
 
